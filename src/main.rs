@@ -3,6 +3,8 @@ use cgmath::{Point2, Vector2};
 
 use image::{ImageBuffer, RgbImage, Rgb};
 
+use std::env;
+
 #[derive(Copy, Clone, Debug)]
 struct Constraint {
     length: f32,
@@ -158,9 +160,10 @@ impl System {
             points.push(Point2::from_vec(p));
         }
 
+        // TODO Add anchor constraints instead of setting mass to zero
         masses.push(0.);
         for i in 1..(n - 1) {
-            masses.push(mass / (n - 2) as f32);
+            masses.push(mass / n as f32);
             constraints.push(Constraint::new(&points, spring_k, damper_k, i - 1, i));
             constraints.push(Constraint::new(&points, spring_k, damper_k, i, i + 1));
         }
@@ -183,13 +186,13 @@ impl System {
             for k in 0..n { // TODO use different dimension for v or change to nodes/meter?
                 let j_n = j as f32 / (n - 1) as f32;
                 let k_n = k as f32 / (n - 1) as f32;
-                let p = origin + u * j_n + v * k_n;
+                let p = origin + u * k_n + v * j_n;
                 points.push(p);
 
                 if (j == 0 || j == n - 1) && (k == 0 || k == n - 1) {
                     masses.push(0.); // HACK use zero mass at corners as anchors
                 } else {
-                    masses.push(mass / (n * n - 4) as f32);
+                    masses.push(mass / (n * n) as f32);
                 }
             }
         }
@@ -273,15 +276,22 @@ fn pixel_size(size: Vector2<f32>, pixels: u32) -> (u32, u32) {
 }
 
 fn main() {
-    let mass = 0.1;
-    let spring_k = 50.;
-    let damper_k = 0.2;
-    let mut system = System::make_rope(Point2::new(-10., 0.), Point2::new(10., 0.), mass, spring_k, damper_k, 8);
-    //let mut system = System::make_net(Point2::new(-10., 10.), Vector2::new(20., 0.), Vector2::new(0., -20.), mass, spring_k, damper_k, 18);
+    let use_net = env::args().nth(1).as_deref() == Some("net");
+    let mut system = if use_net {
+        let mass = 10.;
+        let spring_k = 1.;
+        let damper_k = 0.2;
+        System::make_net(Point2::new(-10., 10.), Vector2::new(20., 0.), Vector2::new(0., -20.), mass, spring_k, damper_k, 18)
+    } else {
+        let mass = 0.1;
+        let spring_k = 40.;
+        let damper_k = 0.1;
+        System::make_rope(Point2::new(-10., 0.), Point2::new(10., 0.), mass, spring_k, damper_k, 8)
+    };
 
     //let (origin, size) = system.find_bounds();
-    let origin = Point2::new(-11., -0.01);
-    let size = Vector2::new(22., 0.05);
+    let origin = Point2::new(-11., if use_net {-11.} else {-0.01});
+    let size = Vector2::new(22., if use_net {22.} else {0.05});
     //println!("origin: {:?}, size: {:?}", origin, size);
 
     //let (w, h) = pixel_size(size, 512);
@@ -291,7 +301,7 @@ fn main() {
 
     let mut img: RgbImage = ImageBuffer::new(w, h);
 
-    let steps = 30;
+    let steps = 15;
     for i in 0..steps {
         let f = i as f32 / steps as f32;
         let u = (f * 255.).ceil() as u8;
