@@ -1,7 +1,7 @@
 use cgmath::prelude::*;
-use cgmath::{Point2, Vector2, Matrix2, Deg};
+use cgmath::{Point2, Vector2};
 
-use image::{GenericImage, GenericImageView, ImageBuffer, RgbImage, Rgb};
+use image::{ImageBuffer, RgbImage, Rgb};
 
 #[derive(Copy, Clone, Debug)]
 struct Constraint {
@@ -13,14 +13,9 @@ struct Constraint {
 }
 
 impl Constraint {
-    fn new(length: f32, spring_k: f32, damper_k: f32, a: usize, b: usize) -> Self {
+    fn new(points: &[Point2<f32>], spring_k: f32, damper_k: f32, a: usize, b: usize) -> Self {
+        let length = points[a].distance(points[a]);
         Constraint {length, spring_k, damper_k, a, b}
-    }
-}
-
-fn safe_put_pixel(img: &mut RgbImage, x: u32, y: u32, rgb: Rgb<u8>) {
-    if x < img.width() && y < img.height() {
-        img.put_pixel(x, y, rgb);
     }
 }
 
@@ -40,16 +35,12 @@ impl<T: Clone> DoubleBuffer<T> {
         &self.front
     }
 
-    fn write_next(&mut self, i: usize, value: T) {
+    fn write(&mut self, i: usize, value: T) {
         self.back[i] = value;
     }
 
     fn read(&self, i: usize) -> T {
         self.front[i].clone()
-    }
-
-    fn read_next(&self, i: usize) -> T {
-        self.back[i].clone()
     }
 
     fn flip(&mut self) {
@@ -109,14 +100,12 @@ impl System {
             let a_to_b = a_to_b / length; // .normalize();
             let b_to_a = -a_to_b;
 
-            // Compute relative scalar velocity
-            let a_vel = self.vel.read(constraint.a);
-            let b_vel = self.vel.read(constraint.b);
-            let a_vel = a_to_b.dot(a_vel);
-            let b_vel = a_to_b.dot(b_vel);
+            // Compute component of velocity directed away from other point
+            let a_vel = self.vel.read(constraint.a).dot(b_to_a);
+            let b_vel = self.vel.read(constraint.b).dot(a_to_b);
 
             let spring_force = (length - constraint.length) * constraint.spring_k;
-            let damper_force = (b_vel - a_vel) * constraint.damper_k;
+            let damper_force = (b_vel + a_vel) * constraint.damper_k;
 
             self.apply_force(constraint.a, a_to_b * (spring_force + damper_force));
             self.apply_force(constraint.b, b_to_a * (spring_force + damper_force));
@@ -124,9 +113,13 @@ impl System {
 
         // Integrate force over each point by 1 time step
         for i in 0..self.force.len() { //self.pos.front().len() {
-            let next_vel = self.vel.read(i) + self.force[i] * dt / self.mass[i];
-            self.pos.write_next(i, self.pos.read(i) + next_vel * dt);
-            self.vel.write_next(i, next_vel);
+            if self.mass[i] == 0. { // HACK zero mass for static points
+                self.pos.write(i, self.pos.read(i));
+            } else {
+                let next_vel = self.vel.read(i) + self.force[i] * dt / self.mass[i];
+                self.pos.write(i, self.pos.read(i) + next_vel * dt);
+                self.vel.write(i, next_vel);
+            }
         }
 
         // Swap the next values from the back buffer
@@ -146,27 +139,11 @@ impl System {
     }
 
     fn rasterize(&self, mut img: &mut RgbImage, origin: Point2<f32>, size: Vector2<f32>, color: Rgb<u8>) {
-        let w = img.width();
-        let h = img.height();
         self.pos.front().iter().zip(self.pos.front().iter().skip(1))
-            .for_each(|(start, end)| {
-                //TODO rasterize_line(&mut img, start, end);
-
-                let start_x = ((start.x - origin.x) * (w - 1) as f32 / size.x) as u32;
-                let start_y = ((start.y - origin.y) * (h - 1) as f32 / size.y) as u32;
-                let end_x = ((end.x - origin.x) * (w - 1) as f32 / size.x) as u32;
-                let end_y = ((end.y - origin.y) * (h - 1) as f32 / size.y) as u32;
-                safe_put_pixel(&mut img, start_x, start_y, color);
-                safe_put_pixel(&mut img, end_x, end_y, color);
-
-                // TODO instead of x, choose largest of x and y to eliminate stipple
-                // TODO assuming start.x < end.x
-                //assert!(start.x < end.x);
-                for x in (start_x+1)..end_x {
-                    let y = (x - start_x) as f32 * (end_y as f32 - start_y as f32) / (end_x as f32 - start_x as f32) + start_y as f32;
-                    if y >= h as f32 { continue; }
-                    safe_put_pixel(&mut img, x, y as u32, color);
-                }
+            .for_each(|(&start, &end)| {
+                let start_clip = to_clip_space(start, origin, size);
+                let end_clip = to_clip_space(end, origin, size);
+                rasterize_line(img, start_clip, end_clip, color);
             });
     }
 
@@ -184,12 +161,15 @@ impl System {
         masses.push(0.);
         for i in 1..(n - 1) {
             masses.push(mass / (n - 2) as f32);
-            let left = (points[i] - points[i - 1]).magnitude();
-            let right = (points[i + 1] - points[i]).magnitude();
-            constraints.push(Constraint::new(left, spring_k, damper_k, i - 1, i));
-            constraints.push(Constraint::new(right, spring_k, damper_k, i, i + 1));
+            constraints.push(Constraint::new(&points, spring_k, damper_k, i - 1, i));
+            constraints.push(Constraint::new(&points, spring_k, damper_k, i, i + 1));
         }
         masses.push(0.);
+
+        /*for i in 2..(n - 2) {
+            constraints.push(Constraint::new(&points, spring_k, damper_k, i - 2, i));
+            constraints.push(Constraint::new(&points, spring_k, damper_k, i, i + 2));
+        }*/
 
         System::new(points, masses, constraints)
     }
@@ -216,23 +196,18 @@ impl System {
 
         for j in 0..n {
             for k in 0..n {
-
                 let i = j * n + k;
                 if k > 0 {
-                    let left = (points[i] - points[i - 1]).magnitude();
-                    constraints.push(Constraint::new(left, spring_k, damper_k, i - 1, i));
+                    constraints.push(Constraint::new(&points, spring_k, damper_k, i - 1, i));
                 }
                 if k < n - 1 {
-                    let right = (points[i + 1] - points[i]).magnitude();
-                    constraints.push(Constraint::new(right, spring_k, damper_k, i, i + 1));
+                    constraints.push(Constraint::new(&points, spring_k, damper_k, i, i + 1));
                 }
                 if j > 1 {
-                    let up = (points[i - n] - points[i]).magnitude();
-                    constraints.push(Constraint::new(up, spring_k, damper_k, i - n, i));
+                    constraints.push(Constraint::new(&points, spring_k, damper_k, i - n, i));
                 }
                 if j < n - 1 {
-                    let down = (points[i + n] - points[i]).magnitude();
-                    constraints.push(Constraint::new(down, spring_k, damper_k, i, i + n));
+                    constraints.push(Constraint::new(&points, spring_k, damper_k, i, i + n));
                 }
             }
         }
@@ -241,7 +216,55 @@ impl System {
     }
 }
 
-fn pixel_size(origin: Point2<f32>, size: Vector2<f32>, pixels: u32) -> (u32, u32) {
+fn to_clip_space(point: Point2<f32>, origin: Point2<f32>, size: Vector2<f32>) -> Point2<f32> {
+    Point2::new((point.x - origin.x) / size.x, (point.y - origin.y) / size.y)
+}
+
+fn rasterize_clipped_line(mut img: &mut RgbImage, start: Point2<f32>, end: Point2<f32>, color: Rgb<u8>) {
+    let w = img.width();
+    let h = img.height();
+
+    let start_x = start.x * (w - 1) as f32;
+    let start_y = start.y * (h - 1) as f32;
+    let end_x = end.x * (w - 1) as f32;
+    let end_y = end.y * (h - 1) as f32;
+
+    // Lerp from start to end by number of pixels across the widest dimension
+    let max_dim = (end_x - start_x).abs().max((end_y - start_y).abs()) as u32;
+    for i in 0..max_dim {
+        let i_f = i as f32 / (max_dim - 1) as f32;
+        let start_p = Vector2::new(start_x, start_y);
+        let end_p = Vector2::new(end_x, end_y);
+        let p = start_p.lerp(end_p, i_f);
+        safe_put_pixel(&mut img, p.x as u32, p.y as u32, color);
+    }
+}
+
+fn rasterize_line(mut img: &mut RgbImage, start: Point2<f32>, end: Point2<f32>, color: Rgb<u8>) {
+    let start_visible = start.x >= 0. && start.x <= 1. && start.y >= 0. && start.y <= 1.;
+    let end_visible = end.x >= 0. && end.x <= 1. && end.y >= 0. && end.y <= 1.;
+
+    if start_visible && end_visible {
+        rasterize_clipped_line(&mut img, start, end, color);
+    } else if start_visible {
+        println!("start clipped! ({}, {})", start.x, start.y);
+        // TODO Find intersection and lerp
+    } else if end_visible {
+        println!("end clipped! ({}, {})", end.x, end.y);
+        // TODO Find intersection and lerp
+    } else {
+        println!("both clipped! ({}, {}), ({}, {})", start.x, start.y, end.x, end.y);
+        // TODO Find two intersections and lerp OR no intersections and skip
+    }
+}
+
+fn safe_put_pixel(img: &mut RgbImage, x: u32, y: u32, rgb: Rgb<u8>) {
+    if x < img.width() && y < img.height() {
+        img.put_pixel(x, y, rgb);
+    }
+}
+
+fn pixel_size(size: Vector2<f32>, pixels: u32) -> (u32, u32) {
     if size.y > size.x {
         (f32::ceil(pixels as f32 * size.x / size.y) as u32, pixels)
     } else {
@@ -250,31 +273,36 @@ fn pixel_size(origin: Point2<f32>, size: Vector2<f32>, pixels: u32) -> (u32, u32
 }
 
 fn main() {
-    let mass = 10.;
-    let spring_k = 60.;
-    let damper_k = 20.;
-    let mut system = System::make_rope(Point2::new(-10., 0.), Point2::new(10., 0.), mass, spring_k, damper_k, 18);
+    let mass = 0.1;
+    let spring_k = 50.;
+    let damper_k = 0.2;
+    let mut system = System::make_rope(Point2::new(-10., 0.), Point2::new(10., 0.), mass, spring_k, damper_k, 8);
     //let mut system = System::make_net(Point2::new(-10., 10.), Vector2::new(20., 0.), Vector2::new(0., -20.), mass, spring_k, damper_k, 18);
 
     //let (origin, size) = system.find_bounds();
-    let origin = Point2::new(-10., 0.);
-    let size = Vector2::new(20., 0.5);
-    println!("origin: {:?}, size: {:?}", origin, size);
-    //let (w, h) = pixel_size(origin, size, 512);
+    let origin = Point2::new(-11., -0.01);
+    let size = Vector2::new(22., 0.05);
+    //println!("origin: {:?}, size: {:?}", origin, size);
+
+    //let (w, h) = pixel_size(size, 512);
     let w = 512;
     let h = 512;
-    println!("w: {}, h: {}", w, h);
+    //println!("w: {}, h: {}", w, h);
+
     let mut img: RgbImage = ImageBuffer::new(w, h);
-    for i in 0..20 {
-        //println!("{:?}", system.points);
-        let f = i as f32 / 20 as f32;
+
+    let steps = 30;
+    for i in 0..steps {
+        let f = i as f32 / steps as f32;
         let u = (f * 255.).ceil() as u8;
         system.rasterize(&mut img, origin, size, Rgb([u, 255 - u, u]));
         system.step(0.01);
     }
+    system.rasterize(&mut img, origin, size, Rgb([0, 255, 255]));
+
+    /*let start = to_clip_space(Point2::new(9., 0.09), origin, size);
+    let end = to_clip_space(Point2::new(-9., -0.09), origin, size);
+    rasterize_line(&mut img, start, end, Rgb([255, 255, 255]));*/
+
     img.save("test.png").unwrap();
-    /*let point = Vector2::new(3f32, 4f32);
-    let matrix = Matrix2::from_angle(Deg(90f32));
-    let result = matrix * point;
-    println!("{:?} * {:?} = {:?}", matrix, point, result);*/
 }
