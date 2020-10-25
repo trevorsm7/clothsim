@@ -1,5 +1,7 @@
+use super::double_buffer::DoubleBuffer;
+
 use cgmath::prelude::*;
-use cgmath::Point2;
+use cgmath::{Point2, Vector2};
 
 #[derive(Copy, Clone, Debug)]
 pub struct Constraint {
@@ -14,5 +16,26 @@ impl Constraint {
     pub fn new(points: &[Point2<f32>], spring_k: f32, damper_k: f32, a: usize, b: usize) -> Self {
         let length = points[a].distance(points[a]);
         Constraint {length, spring_k, damper_k, a, b}
+    }
+
+    pub fn apply_force(&self, pos: &DoubleBuffer<Point2<f32>>, vel: &DoubleBuffer<Vector2<f32>>, force: &mut Vec<Vector2<f32>>) {
+        let a = pos.read(self.a);
+        let b = pos.read(self.b);
+
+        // Compute length and normalized direction to other particle
+        let a_to_b = b - a;
+        let length = a_to_b.magnitude();
+        let a_to_b = a_to_b / length; // .normalize();
+        let b_to_a = -a_to_b;
+
+        // Compute component of velocity directed away from other point
+        let a_vel = vel.read(self.a).dot(b_to_a);
+        let b_vel = vel.read(self.b).dot(a_to_b);
+
+        let spring_force = (length - self.length) * self.spring_k;
+        let damper_force = (b_vel + a_vel) * self.damper_k;
+
+        force[self.a] += a_to_b * (spring_force + damper_force);
+        force[self.b] += b_to_a * (spring_force + damper_force);
     }
 }

@@ -1,11 +1,8 @@
-use cgmath::prelude::*;
-use cgmath::{Point2, Vector2};
-
-use image::{ImageBuffer, RgbImage, Rgb};
-
-use super::rasterize_line;
 use super::double_buffer::DoubleBuffer;
 use super::constraint::Constraint;
+
+use cgmath::prelude::*;
+use cgmath::{Point2, Vector2};
 
 fn to_clip_space(point: Point2<f32>, origin: Point2<f32>, size: Vector2<f32>) -> Point2<f32> {
     Point2::new((point.x - origin.x) / size.x, (point.y - origin.y) / size.y)
@@ -33,10 +30,6 @@ impl System {
         }
     }
 
-    fn apply_force(&mut self, i: usize, force: Vector2<f32>) {
-        self.force[i] += force;
-    }
-
     pub fn step(&mut self, dt: f32) {
         let down = Vector2::new(0., 9.81); // NOTE down is positive, a hack to flip the output
 
@@ -44,34 +37,13 @@ impl System {
             let mass = self.mass[i];
             if mass != 0. { // HACK using zero mass for static anchor points
                 // Add gravitational acceleration first
-                self.apply_force(i, down * mass);
+                self.force[i] += down * mass;
             }
         }
 
         // Apply forces from each constraint
-        // TODO Rust is being weird with mutable ownership here
-        //for constraint in self.constraints.iter().cloned() {
-        for i in 0..self.constraints.len() {
-            let constraint = self.constraints[i].clone();
-
-            let a = self.pos.read(constraint.a);
-            let b = self.pos.read(constraint.b);
-
-            // Compute length and normalized direction to other particle
-            let a_to_b = b - a;
-            let length = a_to_b.magnitude();
-            let a_to_b = a_to_b / length; // .normalize();
-            let b_to_a = -a_to_b;
-
-            // Compute component of velocity directed away from other point
-            let a_vel = self.vel.read(constraint.a).dot(b_to_a);
-            let b_vel = self.vel.read(constraint.b).dot(a_to_b);
-
-            let spring_force = (length - constraint.length) * constraint.spring_k;
-            let damper_force = (b_vel + a_vel) * constraint.damper_k;
-
-            self.apply_force(constraint.a, a_to_b * (spring_force + damper_force));
-            self.apply_force(constraint.b, b_to_a * (spring_force + damper_force));
+        for constraint in &self.constraints {
+            constraint.apply_force(&self.pos, &self.vel, &mut self.force);
         }
 
         // Integrate force over each point by 1 time step
@@ -101,12 +73,12 @@ impl System {
         (min, max - min)
     }*/
 
-    pub fn rasterize(&self, img: &mut RgbImage, origin: Point2<f32>, size: Vector2<f32>, color: Rgb<u8>) {
+    pub fn rasterize<F: FnMut(Point2<f32>, Point2<f32>)>(&self, origin: Point2<f32>, size: Vector2<f32>, mut draw: F) {
         self.pos.front().iter().zip(self.pos.front().iter().skip(1))
             .for_each(|(&start, &end)| {
                 let start_clip = to_clip_space(start, origin, size);
                 let end_clip = to_clip_space(end, origin, size);
-                rasterize_line(img, start_clip, end_clip, color);
+                draw(start_clip, end_clip);
             });
     }
 
