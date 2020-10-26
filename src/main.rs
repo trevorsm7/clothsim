@@ -3,6 +3,7 @@ mod double_buffer;
 mod rasterize;
 mod system;
 
+use constraint::{SpringConstraint, TensionConstraint};
 use system::System;
 use rasterize::rasterize_line;
 
@@ -19,22 +20,39 @@ use std::env;
 }*/
 
 fn main() {
-    let use_net = env::args().nth(1).as_deref() == Some("net");
-    let mut system = if use_net {
-        let mass = 10.;
-        let spring_k = 1.;
-        let damper_k = 0.2;
-        System::make_net(Point2::new(-10., 10.), Vector2::new(20., 0.), Vector2::new(0., -20.), mass, spring_k, damper_k, 18)
-    } else {
-        let mass = 0.1;
-        let spring_k = 40.;
-        let damper_k = 0.1;
-        System::make_rope(Point2::new(-10., 0.), Point2::new(10., 0.), mass, spring_k, damper_k, 8)
+    let (mut system, origin, size) = match env::args().nth(1).as_deref() {
+        Some("net") => {
+            let mass = 10.;
+            let spring_k = 1.;
+            let damper_k = 0.2;
+            let origin = Point2::new(-10., 10.);
+            let u = Vector2::new(20., 0.);
+            let v = Vector2::new(0., -20.);
+            (System::make_net(origin, u, v, mass, spring_k, damper_k, 18),
+                Point2::new(-11., -11.), Vector2::new(22., 22.))
+        },
+        Some("test") => {
+            let pos = vec![Point2::new(-1., 1.), Point2::new(0., 1.), Point2::new(1., 1.),
+                            Point2::new(-1., -1.), Point2::new(0., -1.), Point2::new(1., -1.)];
+            let mass = vec![1., 1., 1., 1., 1., 1.];
+            let constraints = vec![SpringConstraint::new(&pos, 1., 0.1, 0, 1), SpringConstraint::new(&pos, 1., 0.1, 1, 2),
+                                    SpringConstraint::new(&pos, 1., 0.1, 3, 4), SpringConstraint::new(&pos, 1., 0.1, 4, 5)];
+            let tensions = vec![TensionConstraint::new(20., 1, 4)];
+            (System::new(pos, mass, constraints, tensions, false), 
+                Point2::new(-1.5, -1.5), Vector2::new(3., 3.))
+        },
+        _ => {
+            let mass = 0.1;
+            let spring_k = 40.;
+            let damper_k = 0.1;
+            let start = Point2::new(-10., 0.);
+            let end = Point2::new(10., 0.);
+            (System::make_rope(start, end, mass, spring_k, damper_k, 8),
+                Point2::new(-11., -0.01), Vector2::new(22., 0.05))
+        }
     };
 
     //let (origin, size) = system.find_bounds();
-    let origin = Point2::new(-11., if use_net {-11.} else {-0.01});
-    let size = Vector2::new(22., if use_net {22.} else {0.05});
     //println!("origin: {:?}, size: {:?}", origin, size);
 
     //let (w, h) = pixel_size(size, 512);
