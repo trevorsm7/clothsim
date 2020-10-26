@@ -1,5 +1,5 @@
 use super::double_buffer::DoubleBuffer;
-use super::constraint::Constraint;
+use super::constraint::{Constraint, SpringConstraint, TensionConstraint};
 
 use cgmath::prelude::*;
 use cgmath::{Point2, Vector2};
@@ -13,15 +13,17 @@ pub struct System {
     vel: DoubleBuffer<Vector2<f32>>,
     force: Vec<Vector2<f32>>,
     mass: Vec<f32>,
-    constraints: Vec<Constraint>,
+    constraints: Vec<SpringConstraint>,
+    tensions: Vec<TensionConstraint>,
+    enable_g: bool,
 }
 
 impl System {
-    pub fn new(pos: Vec<Point2<f32>>, mass: Vec<f32>, constraints: Vec<Constraint>) -> Self {
+    pub fn new(pos: Vec<Point2<f32>>, mass: Vec<f32>, constraints: Vec<SpringConstraint>, tensions: Vec<TensionConstraint>, enable_g: bool) -> Self {
         let vel = DoubleBuffer::from(vec![Vector2::zero(); pos.len()]);
         let force = vec![Vector2::zero(); pos.len()];
         let pos = DoubleBuffer::from(pos);
-        System {pos, vel, force, mass, constraints}
+        System {pos, vel, force, mass, constraints, tensions, enable_g}
     }
 
     fn reset_force(&mut self) {
@@ -33,16 +35,19 @@ impl System {
     pub fn step(&mut self, dt: f32) {
         let down = Vector2::new(0., 9.81); // NOTE down is positive, a hack to flip the output
 
-        for i in 0..self.force.len() { //self.pos.front().len() {
-            let mass = self.mass[i];
-            if mass != 0. { // HACK using zero mass for static anchor points
-                // Add gravitational acceleration first
-                self.force[i] += down * mass;
+        if self.enable_g {
+            for i in 0..self.force.len() {
+                let mass = self.mass[i];
+                if mass != 0. { // HACK using zero mass for static anchor points
+                    // Add gravitational acceleration first
+                    self.force[i] += down * mass;
+                }
             }
         }
 
         // Apply forces from each constraint
-        for constraint in &self.constraints {
+        for constraint in self.constraints.iter().map(|s| s as &dyn Constraint)
+                .chain(self.tensions.iter().map(|s| s as &dyn Constraint)) {
             constraint.apply_force(&self.pos, &self.vel, &mut self.force);
         }
 
@@ -97,8 +102,8 @@ impl System {
         masses.push(0.);
         for i in 1..(n - 1) {
             masses.push(mass / n as f32);
-            constraints.push(Constraint::new(&points, spring_k, damper_k, i - 1, i));
-            constraints.push(Constraint::new(&points, spring_k, damper_k, i, i + 1));
+            constraints.push(SpringConstraint::new(&points, spring_k, damper_k, i - 1, i));
+            constraints.push(SpringConstraint::new(&points, spring_k, damper_k, i, i + 1));
         }
         masses.push(0.);
 
@@ -107,7 +112,7 @@ impl System {
             constraints.push(Constraint::new(&points, spring_k, damper_k, i, i + 2));
         }*/
 
-        System::new(points, masses, constraints)
+        System::new(points, masses, constraints, vec![], true)
     }
 
     pub fn make_net(origin: Point2<f32>, u: Vector2<f32>, v: Vector2<f32>, mass: f32, spring_k: f32, damper_k: f32, n: usize) -> Self {
@@ -134,20 +139,20 @@ impl System {
             for k in 0..n {
                 let i = j * n + k;
                 if k > 0 {
-                    constraints.push(Constraint::new(&points, spring_k, damper_k, i - 1, i));
+                    constraints.push(SpringConstraint::new(&points, spring_k, damper_k, i - 1, i));
                 }
                 if k < n - 1 {
-                    constraints.push(Constraint::new(&points, spring_k, damper_k, i, i + 1));
+                    constraints.push(SpringConstraint::new(&points, spring_k, damper_k, i, i + 1));
                 }
                 if j > 1 {
-                    constraints.push(Constraint::new(&points, spring_k, damper_k, i - n, i));
+                    constraints.push(SpringConstraint::new(&points, spring_k, damper_k, i - n, i));
                 }
                 if j < n - 1 {
-                    constraints.push(Constraint::new(&points, spring_k, damper_k, i, i + n));
+                    constraints.push(SpringConstraint::new(&points, spring_k, damper_k, i, i + n));
                 }
             }
         }
 
-        System::new(points, masses, constraints)
+        System::new(points, masses, constraints, vec![], true)
     }
 }

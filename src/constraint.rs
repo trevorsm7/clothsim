@@ -3,8 +3,34 @@ use super::double_buffer::DoubleBuffer;
 use cgmath::prelude::*;
 use cgmath::{Point2, Vector2};
 
+pub trait Constraint {
+    fn apply_force(&self, pos: &DoubleBuffer<Point2<f32>>, vel: &DoubleBuffer<Vector2<f32>>, force: &mut Vec<Vector2<f32>>);
+}
+
 #[derive(Copy, Clone, Debug)]
-pub struct Constraint {
+pub struct TensionConstraint {
+    pub tension: f32,
+    pub from: usize,
+    pub to: usize,
+}
+
+impl TensionConstraint {
+    pub fn new(tension: f32, from: usize, to: usize) -> Self {
+        TensionConstraint {tension, from, to}
+    }
+}
+
+impl Constraint for TensionConstraint {
+    fn apply_force(&self, pos: &DoubleBuffer<Point2<f32>>, _vel: &DoubleBuffer<Vector2<f32>>, force: &mut Vec<Vector2<f32>>) {
+        let from = pos.read(self.from);
+        let to = pos.read(self.to);
+        force[self.from] += (to - from) * self.tension;
+        force[self.to] += (from - to) * self.tension;
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct SpringConstraint {
     pub length: f32,
     pub spring_k: f32,
     pub damper_k: f32,
@@ -12,13 +38,15 @@ pub struct Constraint {
     pub b: usize,
 }
 
-impl Constraint {
+impl SpringConstraint {
     pub fn new(points: &[Point2<f32>], spring_k: f32, damper_k: f32, a: usize, b: usize) -> Self {
         let length = points[a].distance(points[a]);
-        Constraint {length, spring_k, damper_k, a, b}
+        SpringConstraint {length, spring_k, damper_k, a, b}
     }
+}
 
-    pub fn apply_force(&self, pos: &DoubleBuffer<Point2<f32>>, vel: &DoubleBuffer<Vector2<f32>>, force: &mut Vec<Vector2<f32>>) {
+impl Constraint for SpringConstraint {
+    fn apply_force(&self, pos: &DoubleBuffer<Point2<f32>>, vel: &DoubleBuffer<Vector2<f32>>, force: &mut Vec<Vector2<f32>>) {
         let a = pos.read(self.a);
         let b = pos.read(self.b);
 
