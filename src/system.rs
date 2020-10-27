@@ -195,6 +195,8 @@ impl System {
             let i = (2 * i + 1) as usize;
             if width % 2 == 0 || i != (width-2) as usize {
                 constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, i, i+2));
+            } else {
+                tensions.push(TensionConstraint::new(tension, i, i+2));
             }
             constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, i+1, i+3));
         }
