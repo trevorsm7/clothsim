@@ -3,7 +3,6 @@ mod double_buffer;
 mod rasterize;
 mod system;
 
-use constraint::{SpringConstraint, TensionConstraint};
 use system::System;
 use rasterize::rasterize_line;
 
@@ -31,15 +30,12 @@ fn main() {
             (System::make_net(origin, u, v, mass, spring_k, damper_k, 18),
                 Point2::new(-11., -11.), Vector2::new(22., 22.))
         },
-        Some("test") => {
-            let pos = vec![Point2::new(-1., 1.), Point2::new(0., 1.), Point2::new(1., 1.),
-                            Point2::new(-1., -1.), Point2::new(0., -1.), Point2::new(1., -1.)];
-            let mass = vec![1., 1., 1., 1., 1., 1.];
-            let constraints = vec![SpringConstraint::new(&pos, 1., 0.1, 0, 1), SpringConstraint::new(&pos, 1., 0.1, 1, 2),
-                                    SpringConstraint::new(&pos, 1., 0.1, 3, 4), SpringConstraint::new(&pos, 1., 0.1, 4, 5)];
-            let tensions = vec![TensionConstraint::new(20., 1, 4)];
-            (System::new(pos, mass, constraints, tensions, false), 
-                Point2::new(-1.5, -1.5), Vector2::new(3., 3.))
+        Some("rig") => {
+            let tension = 5.;
+            let spring_k = 10.;
+            let damper_k = 0.1;
+            (System::make_rig(15, tension, spring_k, damper_k), 
+                Point2::new(-8., -4.), Vector2::new(16., 16.))
         },
         _ => {
             let mass = 0.1;
@@ -62,7 +58,7 @@ fn main() {
 
     let mut img: RgbImage = ImageBuffer::new(w, h);
 
-    let steps = 15;
+    let steps = 30;
     for i in 0..steps {
         let f = i as f32 / steps as f32;
         let u = (f * 255.).ceil() as u8;

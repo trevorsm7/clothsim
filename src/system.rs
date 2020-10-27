@@ -79,8 +79,18 @@ impl System {
     }*/
 
     pub fn rasterize<F: FnMut(Point2<f32>, Point2<f32>)>(&self, origin: Point2<f32>, size: Vector2<f32>, mut draw: F) {
-        self.pos.front().iter().zip(self.pos.front().iter().skip(1))
-            .for_each(|(&start, &end)| {
+        self.constraints.iter()
+            .for_each(|constraint| {
+                let start = self.pos.read(constraint.a);
+                let end = self.pos.read(constraint.b);
+                let start_clip = to_clip_space(start, origin, size);
+                let end_clip = to_clip_space(end, origin, size);
+                draw(start_clip, end_clip);
+            });
+        self.tensions.iter()
+            .for_each(|tension| {
+                let start = self.pos.read(tension.from);
+                let end = self.pos.read(tension.to);
                 let start_clip = to_clip_space(start, origin, size);
                 let end_clip = to_clip_space(end, origin, size);
                 draw(start_clip, end_clip);
@@ -154,5 +164,51 @@ impl System {
         }
 
         System::new(points, masses, constraints, vec![], true)
+    }
+
+    pub fn make_rig(width: i32, tension: f32, spring_k: f32, damper_k: f32) -> Self {
+        let mut pos = vec![];
+        let mut mass = vec![];
+        let mut constraints = vec![];
+        let mut tensions = vec![];
+
+        pos.push(Point2::new((-width/2) as f32, (width/2) as f32));
+        mass.push(0.);
+        for i in 1 .. width {
+            let x = i as f32 - 0.5 * width as f32;
+            let y = x.abs();
+            pos.push(Point2::new(x, y));
+            mass.push(if x == 0. {0.} else {1.}); // Middle anchor point!
+
+            let y = x * x / width as f32 + (0.25 * width as f32);
+            pos.push(Point2::new(x, y));
+            mass.push(1.);
+
+            tensions.push(TensionConstraint::new(tension, pos.len() - 1, pos.len() - 2));
+        }
+        pos.push(Point2::new((width/2) as f32, (width/2) as f32));
+        mass.push(0.);
+
+        constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, 0, 1));
+        constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, 0, 2));
+        for i in 0 .. width-2 {
+            let i = (2 * i + 1) as usize;
+            if width % 2 == 0 || i != (width-2) as usize {
+                constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, i, i+2));
+            }
+            constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, i+1, i+3));
+        }
+        constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, pos.len()-1, pos.len()-2));
+        constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, pos.len()-1, pos.len()-3));
+
+        // Middle anchor point
+        if width % 2 == 1 {
+            pos.push(Point2::new(0., 0.));
+            mass.push(0.);
+            constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, pos.len()-1, (width-2) as usize));
+            constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, pos.len()-1, width as usize));
+        }
+
+        System::new(pos, mass, constraints, tensions, false)
     }
 }
