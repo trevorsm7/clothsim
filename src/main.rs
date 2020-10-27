@@ -65,7 +65,7 @@ fn main() {
         system.rasterize(origin, size, |start, end| rasterize_line(&mut img, start, end, Rgb([u, 255 - u, u])));
         system.step(0.01);
     }
-    system.rasterize(origin, size, |start, end| rasterize_line(&mut img, start, end, Rgb([0, 255, 255])));
+    system.rasterize(origin, size, |start, end| rasterize_line(&mut img, start, end, Rgb([255, 0, 255])));
 
     /*let start = to_clip_space(Point2::new(9., 0.09), origin, size);
     let end = to_clip_space(Point2::new(-9., -0.09), origin, size);

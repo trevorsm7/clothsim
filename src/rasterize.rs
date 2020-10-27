@@ -30,9 +30,9 @@ fn rasterize_clipped_line(mut img: &mut RgbImage, start: Point2<f32>, end: Point
     let end_y = end.y * (h - 1) as f32;
 
     // Lerp from start to end by number of pixels across the widest dimension
-    let max_dim = (end_x - start_x).abs().max((end_y - start_y).abs()) as u32;
-    for i in 0..max_dim {
-        let i_f = i as f32 / (max_dim - 1) as f32;
+    let max_dim = (end_x - start_x).abs().max((end_y - start_y).abs()).ceil() as u32;
+    for i in 0..=max_dim {
+        let i_f = i as f32 / max_dim as f32;
         let start_p = Vector2::new(start_x, start_y);
         let end_p = Vector2::new(end_x, end_y);
         let p = start_p.lerp(end_p, i_f);
