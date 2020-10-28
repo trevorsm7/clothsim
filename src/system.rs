@@ -189,51 +189,52 @@ impl System {
         System::new(points, masses, constraints, vec![], true)
     }
 
-    pub fn make_rig(width: i32, tension: f32, spring_k: f32, damper_k: f32) -> Self {
-        let mut pos = vec![];
-        let mut mass = vec![];
-        let mut constraints = vec![];
-        let mut tensions = vec![];
+    pub fn make_rig(left_anchor: Point2<f32>, mid_anchor: Point2<f32>, right_anchor: Point2<f32>, num_tensioners: usize, tension: f32, spring_k: f32, damper_k: f32) -> Self {
+        let mut system = System::new(vec![], vec![], vec![], vec![], false);
 
-        pos.push(Point2::new((-width/2) as f32, (width/2) as f32));
-        mass.push(0.);
-        for i in 1 .. width {
-            let x = i as f32 - 0.5 * width as f32;
-            let y = x.abs();
-            pos.push(Point2::new(x, y));
-            mass.push(if x == 0. {0.} else {1.}); // Middle anchor point!
+        let left_anchor = system.push_point(left_anchor, 0.);
+        let mid_anchor = system.push_point(mid_anchor, 0.);
+        let right_anchor = system.push_point(right_anchor, 0.);
 
-            let y = x * x / width as f32 + (0.25 * width as f32);
-            pos.push(Point2::new(x, y));
-            mass.push(1.);
+        let scaffold_n = if num_tensioners % 2 == 0 {num_tensioners + 2} else {(num_tensioners + 3) / 2};
+        // TODO Fix magic number 5. (Take parameter for mass or density)
+        let left_rope = system.make_rope(Node::Index(left_anchor), Node::Index(mid_anchor), 5., spring_k, damper_k, scaffold_n);
+        let right_rope = system.make_rope(Node::Index(right_anchor), Node::Index(mid_anchor), 5., spring_k, damper_k, scaffold_n);
 
-            tensions.push(TensionConstraint::new(tension, pos.len() - 1, pos.len() - 2));
-        }
-        pos.push(Point2::new((width/2) as f32, (width/2) as f32));
-        mass.push(0.);
+        let parabola_n = scaffold_n * 2 - 1;
+        // TODO Make rope in parabolic shape (instead of horizontal); maybe have make_rope take Fn(x, y)
+        // |x| x * x / width as f32 + (0.25 * width as f32);
+        // TODO Don't forget to account for left and right anchors with different y position
+        // TODO Fix magic number 5. (Take parameter for mass or density)
+        let parabola_rope = system.make_rope(Node::Index(left_anchor), Node::Index(right_anchor), 5., spring_k, damper_k, parabola_n);
 
-        constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, 0, 1));
-        constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, 0, 2));
-        for i in 0 .. width-2 {
-            let i = (2 * i + 1) as usize;
-            if width % 2 == 0 || i != (width-2) as usize {
-                constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, i, i+2));
-            } else {
-                tensions.push(TensionConstraint::new(tension, i, i+2));
+        if num_tensioners % 2 == 0 {
+            // ex n=14: use 7 on each side (one tensioner per two rope segments out of 16)
+            for (&scaffold, &parabola) in left_rope.iter().zip(parabola_rope.iter())
+                    .step_by(2).skip(1).take(num_tensioners / 2) {
+                system.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
             }
-            constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, i+1, i+3));
+            for (&scaffold, &parabola) in right_rope.iter().zip(parabola_rope.iter().rev())
+                    .step_by(2).skip(1).take(num_tensioners / 2) {
+                system.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
+            }
+            // TODO Run remaining tensioners along scaffold or parabola
+            /*system.tensions.push(TensionConstraint::new(tension,
+                left_rope.iter().cloned().rev().nth(1).unwrap(),
+                right_rope.iter().cloned().rev().nth(1).unwrap()));*/
+        } else {
+            // ex n=13: use 6 on each side plus one in the middle
+            for (&scaffold, &parabola) in left_rope.iter().zip(parabola_rope.iter())
+                    .skip(1).take((num_tensioners - 1) / 2) {
+                system.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
+            }
+            system.tensions.push(TensionConstraint::new(tension, mid_anchor, parabola_rope[scaffold_n - 1]));
+            for (&scaffold, &parabola) in right_rope.iter().zip(parabola_rope.iter().rev())
+                    .skip(1).take((num_tensioners - 1) / 2) {
+                system.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
+            }
         }
-        constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, pos.len()-1, pos.len()-2));
-        constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, pos.len()-1, pos.len()-3));
 
-        // Middle anchor point
-        if width % 2 == 1 {
-            pos.push(Point2::new(0., 0.));
-            mass.push(0.);
-            constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, pos.len()-1, (width-2) as usize));
-            constraints.push(SpringConstraint::new(&pos, spring_k, damper_k, pos.len()-1, width as usize));
-        }
-
-        System::new(pos, mass, constraints, tensions, false)
+        system
     }
 }
