@@ -43,7 +43,7 @@ fn main() {
             let damper_k = 0.1;
             let start = Point2::new(-10., 0.);
             let end = Point2::new(10., 0.);
-            (System::make_rope(start, end, mass, spring_k, damper_k, 8),
+            (System::make_rope_sys(start, end, mass, spring_k, damper_k, 8),
                 Point2::new(-11., -0.01), Vector2::new(22., 0.05))
         }
     };

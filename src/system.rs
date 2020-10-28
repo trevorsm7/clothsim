@@ -8,6 +8,11 @@ fn to_clip_space(point: Point2<f32>, origin: Point2<f32>, size: Vector2<f32>) ->
     Point2::new((point.x - origin.x) / size.x, (point.y - origin.y) / size.y)
 }
 
+pub enum Node {
+    Point(Point2<f32>),
+    Index(usize),
+}
+
 pub struct System {
     pos: DoubleBuffer<Point2<f32>>,
     vel: DoubleBuffer<Vector2<f32>>,
@@ -97,32 +102,50 @@ impl System {
             });
     }
 
-    pub fn make_rope(start: Point2<f32>, end: Point2<f32>, mass: f32, spring_k: f32, damper_k: f32, n: usize) -> Self {
-        let mut points = vec![];
-        let mut masses = vec![];
-        let mut constraints = vec![];
+    fn push_point(&mut self, point: Point2<f32>, mass: f32) -> usize {
+        self.pos.push(point);
+        self.vel.push(Vector2::zero());
+        self.force.push(Vector2::zero());
+        self.mass.push(mass);
+        self.pos.len() - 1
+    }
 
-        for i in 0..n {
-            // TODO Why can't we lerp from Point2?
-            let p = start.to_vec().lerp(end.to_vec(), i as f32 / (n - 1) as f32);
-            points.push(Point2::from_vec(p));
+    fn node_to_index(&mut self, node: Node, mass: f32) -> usize {
+        match node {
+            Node::Point(point) => self.push_point(point, mass),
+            Node::Index(index) => index,
+        }
+    }
+
+    pub fn make_rope(&mut self, start: Node, end: Node, mass: f32, spring_k: f32, damper_k: f32, n: usize) -> Vec<usize> {
+        let start_idx = self.node_to_index(start, mass / n as f32);
+        let end_idx = self.node_to_index(end, mass / n as f32);
+
+        // Lerp requires vector, not point
+        let start = self.pos.read(start_idx).to_vec();
+        let end = self.pos.read(end_idx).to_vec();
+
+        let mut indices = Vec::new();
+        indices.push(start_idx);
+        for i in 1..n-1 {
+            let point = Point2::from_vec(start.lerp(end, i as f32 / (n - 1) as f32));
+            indices.push(self.push_point(point, mass / n as f32));
+        }
+        indices.push(end_idx);
+
+        for (&a, &b) in indices.iter().zip(indices.iter().skip(1)) {
+            self.constraints.push(SpringConstraint::new(self.pos.front(), spring_k, damper_k, a, b));
         }
 
-        // TODO Add anchor constraints instead of setting mass to zero
-        masses.push(0.);
-        for i in 1..(n - 1) {
-            masses.push(mass / n as f32);
-            constraints.push(SpringConstraint::new(&points, spring_k, damper_k, i - 1, i));
-            constraints.push(SpringConstraint::new(&points, spring_k, damper_k, i, i + 1));
-        }
-        masses.push(0.);
+        indices
+    }
 
-        /*for i in 2..(n - 2) {
-            constraints.push(Constraint::new(&points, spring_k, damper_k, i - 2, i));
-            constraints.push(Constraint::new(&points, spring_k, damper_k, i, i + 2));
-        }*/
-
-        System::new(points, masses, constraints, vec![], true)
+    pub fn make_rope_sys(start: Point2<f32>, end: Point2<f32>, mass: f32, spring_k: f32, damper_k: f32, n: usize) -> Self {
+        let mut system = System::new(vec![], vec![], vec![], vec![], true);
+        let start_idx = system.push_point(start, 0.);
+        let end_idx = system.push_point(end, 0.);
+        system.make_rope(Node::Index(start_idx), Node::Index(end_idx), mass, spring_k, damper_k, n);
+        system
     }
 
     pub fn make_net(origin: Point2<f32>, u: Vector2<f32>, v: Vector2<f32>, mass: f32, spring_k: f32, damper_k: f32, n: usize) -> Self {

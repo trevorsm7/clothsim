@@ -24,4 +24,13 @@ impl<T: Clone> DoubleBuffer<T> {
     pub fn flip(&mut self) {
         std::mem::swap(&mut self.front, &mut self.back);
     }
+
+    pub fn push(&mut self, value: T) {
+        self.front.push(value.clone());
+        self.back.push(value);
+    }
+
+    pub fn len(&self) -> usize {
+        self.front.len()
+    }
 }
