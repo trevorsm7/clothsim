@@ -118,6 +118,10 @@ impl System {
     }
 
     pub fn make_rope(&mut self, start: Node, end: Node, mass: f32, spring_k: f32, damper_k: f32, n: usize) -> Vec<usize> {
+        self.make_rope_ext(start, end, |_| Vector2::zero(), mass, spring_k, damper_k, n)
+    }
+
+    pub fn make_rope_ext<F: Fn(f32) -> Vector2<f32>>(&mut self, start: Node, end: Node, func: F, mass: f32, spring_k: f32, damper_k: f32, n: usize) -> Vec<usize> {
         let start_idx = self.node_to_index(start, mass / n as f32);
         let end_idx = self.node_to_index(end, mass / n as f32);
 
@@ -128,7 +132,8 @@ impl System {
         let mut indices = Vec::new();
         indices.push(start_idx);
         for i in 1..n-1 {
-            let point = Point2::from_vec(start.lerp(end, i as f32 / (n - 1) as f32));
+            let t = i as f32 / (n - 1) as f32;
+            let point = Point2::from_vec(start.lerp(end, t) + func(t));
             indices.push(self.push_point(point, mass / n as f32));
         }
         indices.push(end_idx);
@@ -192,6 +197,8 @@ impl System {
     pub fn make_rig(left_anchor: Point2<f32>, mid_anchor: Point2<f32>, right_anchor: Point2<f32>, num_tensioners: usize, tension: f32, spring_k: f32, damper_k: f32) -> Self {
         let mut system = System::new(vec![], vec![], vec![], vec![], false);
 
+        let perp = mid_anchor.to_vec() - left_anchor.midpoint(right_anchor).to_vec();
+
         let left_anchor = system.push_point(left_anchor, 0.);
         let mid_anchor = system.push_point(mid_anchor, 0.);
         let right_anchor = system.push_point(right_anchor, 0.);
@@ -202,11 +209,13 @@ impl System {
         let right_rope = system.make_rope(Node::Index(right_anchor), Node::Index(mid_anchor), 5., spring_k, damper_k, scaffold_n);
 
         let parabola_n = scaffold_n * 2 - 1;
-        // TODO Make rope in parabolic shape (instead of horizontal); maybe have make_rope take Fn(x, y)
-        // |x| x * x / width as f32 + (0.25 * width as f32);
-        // TODO Don't forget to account for left and right anchors with different y position
         // TODO Fix magic number 5. (Take parameter for mass or density)
-        let parabola_rope = system.make_rope(Node::Index(left_anchor), Node::Index(right_anchor), 5., spring_k, damper_k, parabola_n);
+        let parabola_rope = system.make_rope_ext(Node::Index(left_anchor), Node::Index(right_anchor),
+            |t| {
+                let x = t - 0.5;
+                perp * (0.25 - x * x)
+            },
+            5., spring_k, damper_k, parabola_n);
 
         if num_tensioners % 2 == 0 {
             // ex n=14: use 7 on each side (one tensioner per two rope segments out of 16)
