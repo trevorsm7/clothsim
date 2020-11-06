@@ -31,15 +31,15 @@ fn main() {
                 Point2::new(-11., -11.), Vector2::new(22., 22.))
         },
         Some("rig") => {
-            let left_anchor = Point2::new(-7., 7.); // TODO animate by adjusting tension on left and right anchors
+            let left_anchor = Point2::new(0., 14.); // TODO animate by adjusting tension on left and right anchors
             let mid_anchor = Point2::new(0., 0.);
-            let right_anchor = Point2::new(7., 7.);
+            let right_anchor = Point2::new(14., 0.);
             let num_tensioners = 13;
             let tension = 4.; // TODO animate by adjusting tensioner rope tension
             let spring_k = 40.;
             let damper_k = 0.1;
             (System::make_rig(left_anchor, mid_anchor, right_anchor, num_tensioners, tension, spring_k, damper_k), 
-                Point2::new(-8., -4.), Vector2::new(16., 16.))
+                Point2::new(-1., -1.), Vector2::new(16., 16.))
         },
         _ => {
             let mass = 0.1;
