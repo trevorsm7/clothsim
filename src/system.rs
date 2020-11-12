@@ -18,17 +18,17 @@ pub struct System {
     vel: DoubleBuffer<Vector2<f32>>,
     force: Vec<Vector2<f32>>,
     mass: Vec<f32>,
-    constraints: Vec<SpringConstraint>,
+    springs: Vec<SpringConstraint>,
     tensions: Vec<TensionConstraint>,
     enable_g: bool,
 }
 
 impl System {
-    pub fn new(pos: Vec<Point2<f32>>, mass: Vec<f32>, constraints: Vec<SpringConstraint>, tensions: Vec<TensionConstraint>, enable_g: bool) -> Self {
+    pub fn new(pos: Vec<Point2<f32>>, mass: Vec<f32>, springs: Vec<SpringConstraint>, tensions: Vec<TensionConstraint>, enable_g: bool) -> Self {
         let vel = DoubleBuffer::from(vec![Vector2::zero(); pos.len()]);
         let force = vec![Vector2::zero(); pos.len()];
         let pos = DoubleBuffer::from(pos);
-        System {pos, vel, force, mass, constraints, tensions, enable_g}
+        System {pos, vel, force, mass, springs, tensions, enable_g}
     }
 
     fn reset_force(&mut self) {
@@ -51,7 +51,7 @@ impl System {
         }
 
         // Apply forces from each constraint
-        for constraint in self.constraints.iter().map(|s| s as &dyn Constraint)
+        for constraint in self.springs.iter().map(|s| s as &dyn Constraint)
                 .chain(self.tensions.iter().map(|s| s as &dyn Constraint)) {
             constraint.apply_force(&self.pos, &self.vel, &mut self.force);
         }
@@ -84,7 +84,7 @@ impl System {
     }*/
 
     pub fn rasterize<F: FnMut(Point2<f32>, Point2<f32>)>(&self, origin: Point2<f32>, size: Vector2<f32>, mut draw: F) {
-        self.constraints.iter()
+        self.springs.iter()
             .for_each(|constraint| {
                 let start = self.pos.read(constraint.a);
                 let end = self.pos.read(constraint.b);
@@ -139,7 +139,7 @@ impl System {
         indices.push(end_idx);
 
         for (&a, &b) in indices.iter().zip(indices.iter().skip(1)) {
-            self.constraints.push(SpringConstraint::new(self.pos.front(), spring_k, damper_k, a, b));
+            self.springs.push(SpringConstraint::new(self.pos.front(), spring_k, damper_k, a, b));
         }
 
         indices
