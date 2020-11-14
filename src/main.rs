@@ -1,9 +1,9 @@
 mod constraint;
 mod double_buffer;
 mod rasterize;
-mod system;
+mod sim;
 
-use system::System;
+use sim::Simulation;
 use rasterize::rasterize_line;
 
 use cgmath::{Point2, Vector2};
@@ -19,7 +19,7 @@ use std::env;
 }*/
 
 fn main() {
-    let (mut system, origin, size) = match env::args().nth(1).as_deref() {
+    let (mut sim, origin, size) = match env::args().nth(1).as_deref() {
         Some("net") => {
             let mass = 10.;
             let spring_k = 1.;
@@ -27,7 +27,7 @@ fn main() {
             let origin = Point2::new(-10., 10.);
             let u = Vector2::new(20., 0.);
             let v = Vector2::new(0., -20.);
-            (System::make_net(origin, u, v, mass, spring_k, damper_k, 18),
+            (Simulation::make_net(origin, u, v, mass, spring_k, damper_k, 18),
                 Point2::new(-11., -11.), Vector2::new(22., 22.))
         },
         Some("rig") => {
@@ -38,7 +38,7 @@ fn main() {
             let tension = 4.; // TODO animate by adjusting tensioner rope tension
             let spring_k = 40.;
             let damper_k = 0.1;
-            (System::make_rig(left_anchor, mid_anchor, right_anchor, num_tensioners, tension, spring_k, damper_k), 
+            (Simulation::make_rig(left_anchor, mid_anchor, right_anchor, num_tensioners, tension, spring_k, damper_k), 
                 Point2::new(-1., -1.), Vector2::new(16., 16.))
         },
         _ => {
@@ -47,12 +47,12 @@ fn main() {
             let damper_k = 0.1;
             let start = Point2::new(-10., 0.);
             let end = Point2::new(10., 0.);
-            (System::make_rope_sys(start, end, mass, spring_k, damper_k, 8),
+            (Simulation::make_rope_sim(start, end, mass, spring_k, damper_k, 8),
                 Point2::new(-11., -0.01), Vector2::new(22., 0.05))
         }
     };
 
-    //let (origin, size) = system.find_bounds();
+    //let (origin, size) = sim.find_bounds();
     //println!("origin: {:?}, size: {:?}", origin, size);
 
     //let (w, h) = pixel_size(size, 512);
@@ -66,10 +66,10 @@ fn main() {
     for i in 0..steps {
         let f = i as f32 / steps as f32;
         let u = (f * 255.).ceil() as u8;
-        system.rasterize(origin, size, |start, end| rasterize_line(&mut img, start, end, Rgb([u, 255 - u, u])));
-        system.step(0.01);
+        sim.rasterize(origin, size, |start, end| rasterize_line(&mut img, start, end, Rgb([u, 255 - u, u])));
+        sim.step(0.01);
     }
-    system.rasterize(origin, size, |start, end| rasterize_line(&mut img, start, end, Rgb([255, 0, 255])));
+    sim.rasterize(origin, size, |start, end| rasterize_line(&mut img, start, end, Rgb([255, 0, 255])));
 
     /*let start = to_clip_space(Point2::new(9., 0.09), origin, size);
     let end = to_clip_space(Point2::new(-9., -0.09), origin, size);

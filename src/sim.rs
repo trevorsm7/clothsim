@@ -13,7 +13,7 @@ pub enum Node {
     Index(usize),
 }
 
-pub struct System {
+pub struct Simulation {
     pos: DoubleBuffer<Point2<f32>>,
     vel: DoubleBuffer<Vector2<f32>>,
     force: Vec<Vector2<f32>>,
@@ -23,12 +23,12 @@ pub struct System {
     enable_g: bool,
 }
 
-impl System {
+impl Simulation {
     pub fn new(pos: Vec<Point2<f32>>, mass: Vec<f32>, springs: Vec<SpringConstraint>, tensions: Vec<TensionConstraint>, enable_g: bool) -> Self {
         let vel = DoubleBuffer::from(vec![Vector2::zero(); pos.len()]);
         let force = vec![Vector2::zero(); pos.len()];
         let pos = DoubleBuffer::from(pos);
-        System {pos, vel, force, mass, springs, tensions, enable_g}
+        Simulation {pos, vel, force, mass, springs, tensions, enable_g}
     }
 
     fn reset_force(&mut self) {
@@ -145,12 +145,12 @@ impl System {
         indices
     }
 
-    pub fn make_rope_sys(start: Point2<f32>, end: Point2<f32>, mass: f32, spring_k: f32, damper_k: f32, n: usize) -> Self {
-        let mut system = System::new(vec![], vec![], vec![], vec![], true);
-        let start_idx = system.push_point(start, 0.);
-        let end_idx = system.push_point(end, 0.);
-        system.make_rope(Node::Index(start_idx), Node::Index(end_idx), mass, spring_k, damper_k, n);
-        system
+    pub fn make_rope_sim(start: Point2<f32>, end: Point2<f32>, mass: f32, spring_k: f32, damper_k: f32, n: usize) -> Self {
+        let mut sim = Simulation::new(vec![], vec![], vec![], vec![], true);
+        let start_idx = sim.push_point(start, 0.);
+        let end_idx = sim.push_point(end, 0.);
+        sim.make_rope(Node::Index(start_idx), Node::Index(end_idx), mass, spring_k, damper_k, n);
+        sim
     }
 
     pub fn make_net(origin: Point2<f32>, u: Vector2<f32>, v: Vector2<f32>, mass: f32, spring_k: f32, damper_k: f32, n: usize) -> Self {
@@ -191,26 +191,26 @@ impl System {
             }
         }
 
-        System::new(points, masses, constraints, vec![], true)
+        Simulation::new(points, masses, constraints, vec![], true)
     }
 
     pub fn make_rig(left_anchor: Point2<f32>, mid_anchor: Point2<f32>, right_anchor: Point2<f32>, num_tensioners: usize, tension: f32, spring_k: f32, damper_k: f32) -> Self {
-        let mut system = System::new(vec![], vec![], vec![], vec![], false);
+        let mut sim = Simulation::new(vec![], vec![], vec![], vec![], false);
 
         let perp = mid_anchor.to_vec() - left_anchor.midpoint(right_anchor).to_vec();
 
-        let left_anchor = system.push_point(left_anchor, 0.);
-        let mid_anchor = system.push_point(mid_anchor, 0.);
-        let right_anchor = system.push_point(right_anchor, 0.);
+        let left_anchor = sim.push_point(left_anchor, 0.);
+        let mid_anchor = sim.push_point(mid_anchor, 0.);
+        let right_anchor = sim.push_point(right_anchor, 0.);
 
         let scaffold_n = if num_tensioners % 2 == 0 {num_tensioners + 2} else {(num_tensioners + 3) / 2};
         // TODO Fix magic number 5. (Take parameter for mass or density)
-        let left_rope = system.make_rope(Node::Index(left_anchor), Node::Index(mid_anchor), 5., spring_k, damper_k, scaffold_n);
-        let right_rope = system.make_rope(Node::Index(right_anchor), Node::Index(mid_anchor), 5., spring_k, damper_k, scaffold_n);
+        let left_rope = sim.make_rope(Node::Index(left_anchor), Node::Index(mid_anchor), 5., spring_k, damper_k, scaffold_n);
+        let right_rope = sim.make_rope(Node::Index(right_anchor), Node::Index(mid_anchor), 5., spring_k, damper_k, scaffold_n);
 
         let parabola_n = scaffold_n * 2 - 1;
         // TODO Fix magic number 5. (Take parameter for mass or density)
-        let parabola_rope = system.make_rope_ext(Node::Index(left_anchor), Node::Index(right_anchor),
+        let parabola_rope = sim.make_rope_ext(Node::Index(left_anchor), Node::Index(right_anchor),
             |t| {
                 let x = t - 0.5;
                 perp * (0.25 - x * x)
@@ -221,29 +221,29 @@ impl System {
             // ex n=14: use 7 on each side (one tensioner per two rope segments out of 16)
             for (&scaffold, &parabola) in left_rope.iter().zip(parabola_rope.iter())
                     .step_by(2).skip(1).take(num_tensioners / 2) {
-                system.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
+                sim.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
             }
             for (&scaffold, &parabola) in right_rope.iter().zip(parabola_rope.iter().rev())
                     .step_by(2).skip(1).take(num_tensioners / 2) {
-                system.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
+                sim.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
             }
             // TODO Run remaining tensioners along scaffold or parabola
-            /*system.tensions.push(TensionConstraint::new(tension,
+            /*sim.tensions.push(TensionConstraint::new(tension,
                 left_rope.iter().cloned().rev().nth(1).unwrap(),
                 right_rope.iter().cloned().rev().nth(1).unwrap()));*/
         } else {
             // ex n=13: use 6 on each side plus one in the middle
             for (&scaffold, &parabola) in left_rope.iter().zip(parabola_rope.iter())
                     .skip(1).take((num_tensioners - 1) / 2) {
-                system.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
+                sim.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
             }
-            system.tensions.push(TensionConstraint::new(tension, mid_anchor, parabola_rope[scaffold_n - 1]));
+            sim.tensions.push(TensionConstraint::new(tension, mid_anchor, parabola_rope[scaffold_n - 1]));
             for (&scaffold, &parabola) in right_rope.iter().zip(parabola_rope.iter().rev())
                     .skip(1).take((num_tensioners - 1) / 2) {
-                system.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
+                sim.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
             }
         }
 
-        system
+        sim
     }
 }
