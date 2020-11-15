@@ -3,7 +3,7 @@ use cgmath::{Point2, Vector2};
 use image::{RgbImage, Rgb};
 
 fn to_clip_space(point: Point2<f32>, origin: Point2<f32>, size: Vector2<f32>) -> Point2<f32> {
-    Point2::new((point.x - origin.x) / size.x, (point.y - origin.y) / size.y)
+    Point2::new((point.x - origin.x) / size.x, 1. - (point.y - origin.y) / size.y)
 }
 
 pub fn rasterize_line(mut img: &mut RgbImage, origin: Point2<f32>, size: Vector2<f32>, start: Point2<f32>, end: Point2<f32>, color: Rgb<u8>) {

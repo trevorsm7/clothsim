@@ -29,14 +29,14 @@ fn main() {
             let v = Vector2::new(0., -20.);
 
             let mut builder = SimulationBuilder::new();
-            builder.set_gravity(Vector2::new(0., 9.81));
+            builder.set_gravity(Vector2::new(0., -9.81));
             builder.make_net(origin, u, v, mass, spring_k, damper_k, 18);
             (builder.build(), Point2::new(-11., -11.), Vector2::new(22., 22.))
         },
         Some("rig") => {
-            let left_anchor = Point2::new(0., 14.); // TODO animate by adjusting tension on left and right anchors
-            let mid_anchor = Point2::new(0., 0.);
-            let right_anchor = Point2::new(14., 0.);
+            let left_anchor = Point2::new(0., 0.); // TODO animate by adjusting tension on left and right anchors
+            let mid_anchor = Point2::new(0., 14.);
+            let right_anchor = Point2::new(14., 14.);
             let num_tensioners = 13;
             let tension = 4.; // TODO animate by adjusting tensioner rope tension
             let spring_k = 40.;
@@ -54,11 +54,11 @@ fn main() {
             let end = Point2::new(10., 0.);
 
             let mut builder = SimulationBuilder::new();
-            builder.set_gravity(Vector2::new(0., 9.81));
+            builder.set_gravity(Vector2::new(0., -9.81));
             let start_idx = builder.push_point(start, 0.);
             let end_idx = builder.push_point(end, 0.);
             builder.make_rope(Node::Index(start_idx), Node::Index(end_idx), mass, spring_k, damper_k, 8);
-            (builder.build(), Point2::new(-11., -0.01), Vector2::new(22., 0.05))
+            (builder.build(), Point2::new(-11., -0.04), Vector2::new(22., 0.05))
         }
     };
 
