@@ -4,10 +4,6 @@ use super::constraint::{Constraint, SpringConstraint, TensionConstraint};
 use cgmath::prelude::*;
 use cgmath::{Point2, Vector2};
 
-fn to_clip_space(point: Point2<f32>, origin: Point2<f32>, size: Vector2<f32>) -> Point2<f32> {
-    Point2::new((point.x - origin.x) / size.x, (point.y - origin.y) / size.y)
-}
-
 pub enum Node {
     Point(Point2<f32>),
     Index(usize),
@@ -82,22 +78,18 @@ impl Simulation {
         (min, max - min)
     }*/
 
-    pub fn rasterize<F: FnMut(Point2<f32>, Point2<f32>)>(&self, origin: Point2<f32>, size: Vector2<f32>, mut draw: F) {
+    pub fn rasterize<F: FnMut(Point2<f32>, Point2<f32>)>(&self, mut draw: F) {
         self.springs.iter()
             .for_each(|constraint| {
                 let start = self.pos.read(constraint.a);
                 let end = self.pos.read(constraint.b);
-                let start_clip = to_clip_space(start, origin, size);
-                let end_clip = to_clip_space(end, origin, size);
-                draw(start_clip, end_clip);
+                draw(start, end);
             });
         self.tensions.iter()
             .for_each(|tension| {
                 let start = self.pos.read(tension.from);
                 let end = self.pos.read(tension.to);
-                let start_clip = to_clip_space(start, origin, size);
-                let end_clip = to_clip_space(end, origin, size);
-                draw(start_clip, end_clip);
+                draw(start, end);
             });
     }
 }

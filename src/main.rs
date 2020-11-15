@@ -76,10 +76,10 @@ fn main() {
     for i in 0..steps {
         let f = i as f32 / steps as f32;
         let u = (f * 255.).ceil() as u8;
-        sim.rasterize(origin, size, |start, end| rasterize_line(&mut img, start, end, Rgb([u, 255 - u, u])));
+        sim.rasterize(|start, end| rasterize_line(&mut img, origin, size, start, end, Rgb([u, 255 - u, u])));
         sim.step(0.01);
     }
-    sim.rasterize(origin, size, |start, end| rasterize_line(&mut img, start, end, Rgb([255, 0, 255])));
+    sim.rasterize(|start, end| rasterize_line(&mut img, origin, size, start, end, Rgb([255, 0, 255])));
 
     /*let start = to_clip_space(Point2::new(9., 0.09), origin, size);
     let end = to_clip_space(Point2::new(-9., -0.09), origin, size);

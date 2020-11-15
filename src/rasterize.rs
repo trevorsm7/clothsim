@@ -2,7 +2,14 @@ use cgmath::prelude::*;
 use cgmath::{Point2, Vector2};
 use image::{RgbImage, Rgb};
 
-pub fn rasterize_line(mut img: &mut RgbImage, start: Point2<f32>, end: Point2<f32>, color: Rgb<u8>) {
+fn to_clip_space(point: Point2<f32>, origin: Point2<f32>, size: Vector2<f32>) -> Point2<f32> {
+    Point2::new((point.x - origin.x) / size.x, (point.y - origin.y) / size.y)
+}
+
+pub fn rasterize_line(mut img: &mut RgbImage, origin: Point2<f32>, size: Vector2<f32>, start: Point2<f32>, end: Point2<f32>, color: Rgb<u8>) {
+    let start = to_clip_space(start, origin, size);
+    let end = to_clip_space(end, origin, size);
+
     let start_visible = start.x >= 0. && start.x <= 1. && start.y >= 0. && start.y <= 1.;
     let end_visible = end.x >= 0. && end.x <= 1. && end.y >= 0. && end.y <= 1.;
 
