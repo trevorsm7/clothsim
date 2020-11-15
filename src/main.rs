@@ -28,7 +28,8 @@ fn main() {
             let u = Vector2::new(20., 0.);
             let v = Vector2::new(0., -20.);
 
-            let mut builder = SimulationBuilder::new(true);
+            let mut builder = SimulationBuilder::new();
+            builder.set_gravity(Vector2::new(0., 9.81));
             builder.make_net(origin, u, v, mass, spring_k, damper_k, 18);
             (builder.build(), Point2::new(-11., -11.), Vector2::new(22., 22.))
         },
@@ -41,7 +42,7 @@ fn main() {
             let spring_k = 40.;
             let damper_k = 0.1;
 
-            let mut builder = SimulationBuilder::new(false);
+            let mut builder = SimulationBuilder::new();
             builder.make_rig(left_anchor, mid_anchor, right_anchor, num_tensioners, tension, spring_k, damper_k);
             (builder.build(), Point2::new(-1., -1.), Vector2::new(16., 16.))
         },
@@ -52,7 +53,8 @@ fn main() {
             let start = Point2::new(-10., 0.);
             let end = Point2::new(10., 0.);
 
-            let mut builder = SimulationBuilder::new(true);
+            let mut builder = SimulationBuilder::new();
+            builder.set_gravity(Vector2::new(0., 9.81));
             let start_idx = builder.push_point(start, 0.);
             let end_idx = builder.push_point(end, 0.);
             builder.make_rope(Node::Index(start_idx), Node::Index(end_idx), mass, spring_k, damper_k, 8);

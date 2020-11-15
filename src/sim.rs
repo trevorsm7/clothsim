@@ -20,10 +20,18 @@ pub struct Simulation {
     mass: Vec<f32>,
     springs: Vec<SpringConstraint>,
     tensions: Vec<TensionConstraint>,
-    enable_g: bool,
+    gravity: Option<Vector2<f32>>,
 }
 
 impl Simulation {
+    fn new(pos: Vec<Point2<f32>>, mass: Vec<f32>, springs: Vec<SpringConstraint>, tensions: Vec<TensionConstraint>, gravity: Option<Vector2<f32>>) -> Self {
+        let len = pos.len();
+        let pos = DoubleBuffer::from(pos);
+        let force = vec![Vector2::zero(); len];
+        let vel = DoubleBuffer::from(vec![Vector2::zero(); len]);
+        Simulation {pos, vel, force, mass, springs, tensions, gravity}
+    }
+
     fn reset_force(&mut self) {
         for force in self.force.iter_mut() {
             *force = Vector2::zero();
@@ -31,14 +39,12 @@ impl Simulation {
     }
 
     pub fn step(&mut self, dt: f32) {
-        let down = Vector2::new(0., 9.81); // NOTE down is positive, a hack to flip the output
-
-        if self.enable_g {
+        if let Some(gravity) = self.gravity {
             for i in 0..self.force.len() {
                 let mass = self.mass[i];
                 if mass != 0. { // HACK using zero mass for static anchor points
                     // Add gravitational acceleration first
-                    self.force[i] += down * mass;
+                    self.force[i] += gravity * mass;
                 }
             }
         }
@@ -101,28 +107,21 @@ pub struct SimulationBuilder {
     mass: Vec<f32>,
     springs: Vec<SpringConstraint>,
     tensions: Vec<TensionConstraint>,
-    enable_g: bool,
+    gravity: Option<Vector2<f32>>,
 }
 
 impl SimulationBuilder {
-    pub fn new(enable_g: bool) -> Self {
+    pub fn new() -> Self {
         let pos = vec![];
         let mass = vec![];
         let springs = vec![];
         let tensions = vec![];
-        SimulationBuilder {pos, mass, springs, tensions, enable_g}
+        let gravity = None;
+        SimulationBuilder {pos, mass, springs, tensions, gravity}
     }
 
     pub fn build(self) -> Simulation {
-        let len = self.pos.len();
-        let pos = DoubleBuffer::from(self.pos);
-        let force = vec![Vector2::zero(); len];
-        let vel = DoubleBuffer::from(vec![Vector2::zero(); len]);
-        let mass = self.mass;
-        let springs = self.springs;
-        let tensions = self.tensions;
-        let enable_g = self.enable_g;
-        Simulation {pos, vel, force, mass, springs, tensions, enable_g}
+        Simulation::new(self.pos, self.mass, self.springs, self.tensions, self.gravity)
     }
 
     pub fn push_point(&mut self, point: Point2<f32>, mass: f32) -> usize {
@@ -137,7 +136,11 @@ impl SimulationBuilder {
             Node::Index(index) => index,
         }
     }
-    
+
+    pub fn set_gravity(&mut self, gravity: Vector2<f32>) {
+        self.gravity = Some(gravity);
+    }
+
     pub fn make_rope(&mut self, start: Node, end: Node, mass: f32, spring_k: f32, damper_k: f32, n: usize) -> Vec<usize> {
         self.make_rope_ext(start, end, |_| Vector2::zero(), mass, spring_k, damper_k, n)
     }
