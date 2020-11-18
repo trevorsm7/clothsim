@@ -1,4 +1,3 @@
-use super::double_buffer::DoubleBuffer;
 use super::constraint::{Constraint, SpringConstraint, TensionConstraint};
 
 use cgmath::prelude::*;
@@ -10,8 +9,8 @@ pub enum Node {
 }
 
 pub struct Simulation {
-    pos: DoubleBuffer<Point2<f32>>,
-    vel: DoubleBuffer<Vector2<f32>>,
+    pos: Vec<Point2<f32>>,
+    vel: Vec<Vector2<f32>>,
     force: Vec<Vector2<f32>>,
     mass: Vec<f32>,
     springs: Vec<SpringConstraint>,
@@ -22,9 +21,8 @@ pub struct Simulation {
 impl Simulation {
     fn new(pos: Vec<Point2<f32>>, mass: Vec<f32>, springs: Vec<SpringConstraint>, tensions: Vec<TensionConstraint>, gravity: Option<Vector2<f32>>) -> Self {
         let len = pos.len();
-        let pos = DoubleBuffer::from(pos);
         let force = vec![Vector2::zero(); len];
-        let vel = DoubleBuffer::from(vec![Vector2::zero(); len]);
+        let vel = vec![Vector2::zero(); len];
         Simulation {pos, vel, force, mass, springs, tensions, gravity}
     }
 
@@ -53,18 +51,13 @@ impl Simulation {
 
         // Integrate force over each point by 1 time step
         for i in 0..self.force.len() { //self.pos.front().len() {
-            if self.mass[i] == 0. { // HACK zero mass for static points
-                self.pos.write(i, self.pos.read(i));
-            } else {
-                let next_vel = self.vel.read(i) + self.force[i] * dt / self.mass[i];
-                self.pos.write(i, self.pos.read(i) + next_vel * dt);
-                self.vel.write(i, next_vel);
+            if self.mass[i] != 0. { // HACK zero mass for static points
+                let next_vel = self.vel[i] + self.force[i] * dt / self.mass[i];
+                self.pos[i] += next_vel * dt;
+                self.vel[i] = next_vel;
             }
         }
 
-        // Swap the next values from the back buffer
-        self.pos.flip();
-        self.vel.flip();
         self.reset_force();
     }
 
@@ -81,14 +74,14 @@ impl Simulation {
     pub fn rasterize<F: FnMut(Point2<f32>, Point2<f32>)>(&self, mut draw: F) {
         self.springs.iter()
             .for_each(|constraint| {
-                let start = self.pos.read(constraint.a);
-                let end = self.pos.read(constraint.b);
+                let start = self.pos[constraint.a];
+                let end = self.pos[constraint.b];
                 draw(start, end);
             });
         self.tensions.iter()
             .for_each(|tension| {
-                let start = self.pos.read(tension.from);
-                let end = self.pos.read(tension.to);
+                let start = self.pos[tension.from];
+                let end = self.pos[tension.to];
                 draw(start, end);
             });
     }

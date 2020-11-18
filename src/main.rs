@@ -1,5 +1,4 @@
 mod constraint;
-mod double_buffer;
 mod rasterize;
 mod sim;
 

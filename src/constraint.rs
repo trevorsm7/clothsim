@@ -1,10 +1,8 @@
-use super::double_buffer::DoubleBuffer;
-
 use cgmath::prelude::*;
 use cgmath::{Point2, Vector2};
 
 pub trait Constraint {
-    fn apply_force(&self, pos: &DoubleBuffer<Point2<f32>>, vel: &DoubleBuffer<Vector2<f32>>, force: &mut Vec<Vector2<f32>>);
+    fn apply_force(&self, pos: &[Point2<f32>], vel: &[Vector2<f32>], force: &mut [Vector2<f32>]);
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -21,9 +19,9 @@ impl TensionConstraint {
 }
 
 impl Constraint for TensionConstraint {
-    fn apply_force(&self, pos: &DoubleBuffer<Point2<f32>>, _vel: &DoubleBuffer<Vector2<f32>>, force: &mut Vec<Vector2<f32>>) {
-        let from = pos.read(self.from);
-        let to = pos.read(self.to);
+    fn apply_force(&self, pos: &[Point2<f32>], _vel: &[Vector2<f32>], force: &mut[Vector2<f32>]) {
+        let from = pos[self.from];
+        let to = pos[self.to];
         force[self.from] += (to - from) * self.tension;
         force[self.to] += (from - to) * self.tension;
     }
@@ -46,9 +44,9 @@ impl SpringConstraint {
 }
 
 impl Constraint for SpringConstraint {
-    fn apply_force(&self, pos: &DoubleBuffer<Point2<f32>>, vel: &DoubleBuffer<Vector2<f32>>, force: &mut Vec<Vector2<f32>>) {
-        let a = pos.read(self.a);
-        let b = pos.read(self.b);
+    fn apply_force(&self, pos: &[Point2<f32>], vel: &[Vector2<f32>], force: &mut[Vector2<f32>]) {
+        let a = pos[self.a];
+        let b = pos[self.b];
 
         // Compute length and normalized direction to other particle
         let a_to_b = b - a;
@@ -57,8 +55,8 @@ impl Constraint for SpringConstraint {
         let b_to_a = -a_to_b;
 
         // Compute component of velocity directed away from other point
-        let a_vel = vel.read(self.a).dot(b_to_a);
-        let b_vel = vel.read(self.b).dot(a_to_b);
+        let a_vel = vel[self.a].dot(b_to_a);
+        let b_vel = vel[self.b].dot(a_to_b);
 
         let spring_force = (length - self.length) * self.spring_k;
         let damper_force = (b_vel + a_vel) * self.damper_k;
