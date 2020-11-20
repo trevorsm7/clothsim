@@ -1,4 +1,4 @@
-use super::constraint::{Constraint, SpringConstraint, TensionConstraint};
+use super::constraint::{Tension, Spring, apply_tension, apply_spring};
 
 use cgmath::prelude::*;
 use cgmath::{Point2, Vector2};
@@ -8,22 +8,28 @@ pub enum Node {
     Index(usize),
 }
 
+pub struct Line (pub usize, pub usize);
+
 pub struct Simulation {
     pos: Vec<Point2<f32>>,
     vel: Vec<Vector2<f32>>,
     force: Vec<Vector2<f32>>,
     mass: Vec<f32>,
-    springs: Vec<SpringConstraint>,
-    tensions: Vec<TensionConstraint>,
+    line: Vec<Line>,
+    spring: Vec<Spring>,
+    tension: Vec<Tension>,
     gravity: Option<Vector2<f32>>,
 }
 
 impl Simulation {
-    fn new(pos: Vec<Point2<f32>>, mass: Vec<f32>, springs: Vec<SpringConstraint>, tensions: Vec<TensionConstraint>, gravity: Option<Vector2<f32>>) -> Self {
+    fn new(pos: Vec<Point2<f32>>, mass: Vec<f32>, spring: (Vec<Line>, Vec<Spring>), tension: (Vec<Line>, Vec<Tension>), gravity: Option<Vector2<f32>>) -> Self {
         let len = pos.len();
         let force = vec![Vector2::zero(); len];
         let vel = vec![Vector2::zero(); len];
-        Simulation {pos, vel, force, mass, springs, tensions, gravity}
+        let (mut line, spring) = spring;
+        let (line_ext, tension) = tension;
+        line.extend(line_ext);
+        Simulation {pos, vel, force, mass, line, spring, tension, gravity}
     }
 
     fn reset_force(&mut self) {
@@ -44,13 +50,21 @@ impl Simulation {
         }
 
         // Apply forces from each constraint
-        for constraint in self.springs.iter().map(|s| s as &dyn Constraint)
-                .chain(self.tensions.iter().map(|s| s as &dyn Constraint)) {
-            constraint.apply_force(&self.pos, &self.vel, &mut self.force);
+        // HACK manually splitting Line component between Spring and Tension
+        // TODO implement joining components by matching entity ID
+        // NOTE for some reason we have to borrow from self outside of the closure
+        {
+            let pos = &self.pos;
+            let vel = &self.vel;
+            let force = &mut self.force;
+            self.line.iter().take(self.spring.len()).zip(self.spring.iter())
+                .for_each(|(line, spring)| apply_spring(line, spring, pos, vel, force));
+            self.line.iter().skip(self.spring.len()).zip(self.tension.iter())
+                .for_each(|(line, tension)| apply_tension(line, tension, pos, force));
         }
 
         // Integrate force over each point by 1 time step
-        for i in 0..self.force.len() { //self.pos.front().len() {
+        for i in 0..self.force.len() {
             if self.mass[i] != 0. { // HACK zero mass for static points
                 let next_vel = self.vel[i] + self.force[i] * dt / self.mass[i];
                 self.pos[i] += next_vel * dt;
@@ -72,16 +86,10 @@ impl Simulation {
     }*/
 
     pub fn rasterize<F: FnMut(Point2<f32>, Point2<f32>)>(&self, mut draw: F) {
-        self.springs.iter()
-            .for_each(|constraint| {
-                let start = self.pos[constraint.a];
-                let end = self.pos[constraint.b];
-                draw(start, end);
-            });
-        self.tensions.iter()
-            .for_each(|tension| {
-                let start = self.pos[tension.from];
-                let end = self.pos[tension.to];
+        self.line.iter()
+            .for_each(|&Line(a, b)| {
+                let start = self.pos[a];
+                let end = self.pos[b];
                 draw(start, end);
             });
     }
@@ -90,8 +98,8 @@ impl Simulation {
 pub struct SimulationBuilder {
     pos: Vec<Point2<f32>>,
     mass: Vec<f32>,
-    springs: Vec<SpringConstraint>,
-    tensions: Vec<TensionConstraint>,
+    springs: (Vec<Line>, Vec<Spring>),
+    tensions: (Vec<Line>, Vec<Tension>),
     gravity: Option<Vector2<f32>>,
 }
 
@@ -99,8 +107,8 @@ impl SimulationBuilder {
     pub fn new() -> Self {
         let pos = vec![];
         let mass = vec![];
-        let springs = vec![];
-        let tensions = vec![];
+        let springs = (vec![], vec![]);
+        let tensions = (vec![], vec![]);
         let gravity = None;
         SimulationBuilder {pos, mass, springs, tensions, gravity}
     }
@@ -113,6 +121,17 @@ impl SimulationBuilder {
         self.pos.push(point);
         self.mass.push(mass);
         self.pos.len() - 1
+    }
+
+    pub fn push_spring(&mut self, spring_k: f32, damper_k: f32, a: usize, b: usize) {
+        self.springs.0.push(Line(a, b));
+        let length = self.pos[a].distance(self.pos[b]);
+        self.springs.1.push(Spring{length, spring_k, damper_k});
+    }
+
+    pub fn push_tension(&mut self, tension_k: f32, a: usize, b: usize) {
+        self.tensions.0.push(Line(a, b));
+        self.tensions.1.push(Tension(tension_k));
     }
 
     fn node_to_index(&mut self, node: Node, mass: f32) -> usize {
@@ -148,7 +167,7 @@ impl SimulationBuilder {
         indices.push(end_idx);
 
         for (&a, &b) in indices.iter().zip(indices.iter().skip(1)) {
-            self.springs.push(SpringConstraint::new(&self.pos, spring_k, damper_k, a, b));
+            self.push_spring(spring_k, damper_k, a, b);
         }
 
         indices
@@ -174,16 +193,16 @@ impl SimulationBuilder {
             for k in 0..n {
                 let i = j * n + k;
                 if k > 0 {
-                    self.springs.push(SpringConstraint::new(&self.pos, spring_k, damper_k, i - 1, i));
+                    self.push_spring(spring_k, damper_k, i - 1, i);
                 }
                 if k < n - 1 {
-                    self.springs.push(SpringConstraint::new(&self.pos, spring_k, damper_k, i, i + 1));
+                    self.push_spring(spring_k, damper_k, i, i + 1);
                 }
                 if j > 1 {
-                    self.springs.push(SpringConstraint::new(&self.pos, spring_k, damper_k, i - n, i));
+                    self.push_spring(spring_k, damper_k, i - n, i);
                 }
                 if j < n - 1 {
-                    self.springs.push(SpringConstraint::new(&self.pos, spring_k, damper_k, i, i + n));
+                    self.push_spring(spring_k, damper_k, i, i + n);
                 }
             }
         }
@@ -212,13 +231,13 @@ impl SimulationBuilder {
 
         if num_tensioners % 2 == 0 {
             // ex n=14: use 7 on each side (one tensioner per two rope segments out of 16)
-            for (&scaffold, &parabola) in left_rope.iter().zip(parabola_rope.iter())
+            for (&a, &b) in left_rope.iter().zip(parabola_rope.iter())
                     .step_by(2).skip(1).take(num_tensioners / 2) {
-                self.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
+                self.push_tension(tension, a, b);
             }
-            for (&scaffold, &parabola) in right_rope.iter().zip(parabola_rope.iter().rev())
+            for (&a, &b) in right_rope.iter().zip(parabola_rope.iter().rev())
                     .step_by(2).skip(1).take(num_tensioners / 2) {
-                self.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
+                self.push_tension(tension, a, b);
             }
             // TODO Run remaining tensioners along scaffold or parabola
             /*sim.tensions.push(TensionConstraint::new(tension,
@@ -226,14 +245,14 @@ impl SimulationBuilder {
                 right_rope.iter().cloned().rev().nth(1).unwrap()));*/
         } else {
             // ex n=13: use 6 on each side plus one in the middle
-            for (&scaffold, &parabola) in left_rope.iter().zip(parabola_rope.iter())
+            for (&a, &b) in left_rope.iter().zip(parabola_rope.iter())
                     .skip(1).take((num_tensioners - 1) / 2) {
-                self.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
+                self.push_tension(tension, a, b);
             }
-            self.tensions.push(TensionConstraint::new(tension, mid_anchor, parabola_rope[scaffold_n - 1]));
-            for (&scaffold, &parabola) in right_rope.iter().zip(parabola_rope.iter().rev())
+            self.push_tension(tension, mid_anchor, parabola_rope[scaffold_n - 1]);
+            for (&a, &b) in right_rope.iter().zip(parabola_rope.iter().rev())
                     .skip(1).take((num_tensioners - 1) / 2) {
-                self.tensions.push(TensionConstraint::new(tension, scaffold, parabola));
+                self.push_tension(tension, a, b);
             }
         }
     }
