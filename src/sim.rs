@@ -19,17 +19,18 @@ pub struct Simulation {
     spring: Vec<Spring>,
     tension: Vec<Tension>,
     gravity: Option<Vector2<f32>>,
+    damper_k: f32,
 }
 
 impl Simulation {
-    fn new(pos: Vec<Point2<f32>>, mass: Vec<f32>, spring: (Vec<Line>, Vec<Spring>), tension: (Vec<Line>, Vec<Tension>), gravity: Option<Vector2<f32>>) -> Self {
+    fn new(pos: Vec<Point2<f32>>, mass: Vec<f32>, spring: (Vec<Line>, Vec<Spring>), tension: (Vec<Line>, Vec<Tension>), gravity: Option<Vector2<f32>>, damper_k: f32) -> Self {
         let len = pos.len();
         let force = vec![Vector2::zero(); len];
         let vel = vec![Vector2::zero(); len];
         let (mut line, spring) = spring;
         let (line_ext, tension) = tension;
         line.extend(line_ext);
-        Simulation {pos, vel, force, mass, line, spring, tension, gravity}
+        Simulation {pos, vel, force, mass, line, spring, tension, gravity, damper_k}
     }
 
     fn reset_force(&mut self) {
@@ -55,10 +56,9 @@ impl Simulation {
         // NOTE for some reason we have to borrow from self outside of the closure
         {
             let pos = &self.pos;
-            let vel = &self.vel;
             let force = &mut self.force;
             self.line.iter().take(self.spring.len()).zip(self.spring.iter())
-                .for_each(|(line, spring)| apply_spring(line, spring, pos, vel, force));
+                .for_each(|(line, spring)| apply_spring(line, spring, pos, force));
             self.line.iter().skip(self.spring.len()).zip(self.tension.iter())
                 .for_each(|(line, tension)| apply_tension(line, tension, pos, force));
         }
@@ -68,7 +68,7 @@ impl Simulation {
             if self.mass[i] != 0. { // HACK zero mass for static points
                 let next_vel = self.vel[i] + self.force[i] * dt / self.mass[i];
                 self.pos[i] += next_vel * dt;
-                self.vel[i] = next_vel;
+                self.vel[i] = next_vel * self.damper_k;
             }
         }
 
@@ -101,6 +101,7 @@ pub struct SimulationBuilder {
     springs: (Vec<Line>, Vec<Spring>),
     tensions: (Vec<Line>, Vec<Tension>),
     gravity: Option<Vector2<f32>>,
+    damper_k: f32,
 }
 
 impl SimulationBuilder {
@@ -110,11 +111,12 @@ impl SimulationBuilder {
         let springs = (vec![], vec![]);
         let tensions = (vec![], vec![]);
         let gravity = None;
-        SimulationBuilder {pos, mass, springs, tensions, gravity}
+        let damper_k = 1.;
+        SimulationBuilder {pos, mass, springs, tensions, gravity, damper_k}
     }
 
     pub fn build(self) -> Simulation {
-        Simulation::new(self.pos, self.mass, self.springs, self.tensions, self.gravity)
+        Simulation::new(self.pos, self.mass, self.springs, self.tensions, self.gravity, self.damper_k)
     }
 
     pub fn push_point(&mut self, point: Point2<f32>, mass: f32) -> usize {
@@ -123,10 +125,10 @@ impl SimulationBuilder {
         self.pos.len() - 1
     }
 
-    pub fn push_spring(&mut self, spring_k: f32, damper_k: f32, a: usize, b: usize) {
+    pub fn push_spring(&mut self, spring_k: f32, a: usize, b: usize) {
         self.springs.0.push(Line(a, b));
         let length = self.pos[a].distance(self.pos[b]);
-        self.springs.1.push(Spring{length, spring_k, damper_k});
+        self.springs.1.push(Spring{length, spring_k});
     }
 
     pub fn push_tension(&mut self, tension_k: f32, a: usize, b: usize) {
@@ -145,11 +147,15 @@ impl SimulationBuilder {
         self.gravity = Some(gravity);
     }
 
-    pub fn make_rope(&mut self, start: Node, end: Node, mass: f32, spring_k: f32, damper_k: f32, n: usize) -> Vec<usize> {
-        self.make_rope_ext(start, end, |_| Vector2::zero(), mass, spring_k, damper_k, n)
+    pub fn set_damper(&mut self, damper_k: f32) {
+        self.damper_k = damper_k;
     }
 
-    pub fn make_rope_ext<F: Fn(f32) -> Vector2<f32>>(&mut self, start: Node, end: Node, func: F, mass: f32, spring_k: f32, damper_k: f32, n: usize) -> Vec<usize> {
+    pub fn make_rope(&mut self, start: Node, end: Node, mass: f32, spring_k: f32, n: usize) -> Vec<usize> {
+        self.make_rope_ext(start, end, |_| Vector2::zero(), mass, spring_k, n)
+    }
+
+    pub fn make_rope_ext<F: Fn(f32) -> Vector2<f32>>(&mut self, start: Node, end: Node, func: F, mass: f32, spring_k: f32, n: usize) -> Vec<usize> {
         let start_idx = self.node_to_index(start, mass / n as f32);
         let end_idx = self.node_to_index(end, mass / n as f32);
 
@@ -167,13 +173,13 @@ impl SimulationBuilder {
         indices.push(end_idx);
 
         for (&a, &b) in indices.iter().zip(indices.iter().skip(1)) {
-            self.push_spring(spring_k, damper_k, a, b);
+            self.push_spring(spring_k, a, b);
         }
 
         indices
     }
 
-    pub fn make_net(&mut self, origin: Point2<f32>, u: Vector2<f32>, v: Vector2<f32>, mass: f32, spring_k: f32, damper_k: f32, n: usize) {
+    pub fn make_net(&mut self, origin: Point2<f32>, u: Vector2<f32>, v: Vector2<f32>, mass: f32, spring_k: f32, n: usize) {
         for j in 0..n {
             for k in 0..n { // TODO use different dimension for v or change to nodes/meter?
                 let j_n = j as f32 / (n - 1) as f32;
@@ -193,22 +199,22 @@ impl SimulationBuilder {
             for k in 0..n {
                 let i = j * n + k;
                 if k > 0 {
-                    self.push_spring(spring_k, damper_k, i - 1, i);
+                    self.push_spring(spring_k, i - 1, i);
                 }
                 if k < n - 1 {
-                    self.push_spring(spring_k, damper_k, i, i + 1);
+                    self.push_spring(spring_k, i, i + 1);
                 }
                 if j > 1 {
-                    self.push_spring(spring_k, damper_k, i - n, i);
+                    self.push_spring(spring_k, i - n, i);
                 }
                 if j < n - 1 {
-                    self.push_spring(spring_k, damper_k, i, i + n);
+                    self.push_spring(spring_k, i, i + n);
                 }
             }
         }
     }
 
-    pub fn make_rig(&mut self, left_anchor: Point2<f32>, mid_anchor: Point2<f32>, right_anchor: Point2<f32>, num_tensioners: usize, tension: f32, spring_k: f32, damper_k: f32) {
+    pub fn make_rig(&mut self, left_anchor: Point2<f32>, mid_anchor: Point2<f32>, right_anchor: Point2<f32>, num_tensioners: usize, tension: f32, spring_k: f32) {
         let perp = mid_anchor.to_vec() - left_anchor.midpoint(right_anchor).to_vec();
 
         let left_anchor = self.push_point(left_anchor, 0.);
@@ -217,8 +223,8 @@ impl SimulationBuilder {
 
         let scaffold_n = if num_tensioners % 2 == 0 {num_tensioners + 2} else {(num_tensioners + 3) / 2};
         // TODO Fix magic number 5. (Take parameter for mass or density)
-        let left_rope = self.make_rope(Node::Index(left_anchor), Node::Index(mid_anchor), 5., spring_k, damper_k, scaffold_n);
-        let right_rope = self.make_rope(Node::Index(right_anchor), Node::Index(mid_anchor), 5., spring_k, damper_k, scaffold_n);
+        let left_rope = self.make_rope(Node::Index(left_anchor), Node::Index(mid_anchor), 5., spring_k, scaffold_n);
+        let right_rope = self.make_rope(Node::Index(right_anchor), Node::Index(mid_anchor), 5., spring_k, scaffold_n);
 
         let parabola_n = scaffold_n * 2 - 1;
         // TODO Fix magic number 5. (Take parameter for mass or density)
@@ -227,7 +233,7 @@ impl SimulationBuilder {
                 let x = t - 0.5;
                 perp * (0.25 - x * x)
             },
-            5., spring_k, damper_k, parabola_n);
+            5., spring_k, parabola_n);
 
         if num_tensioners % 2 == 0 {
             // ex n=14: use 7 on each side (one tensioner per two rope segments out of 16)
