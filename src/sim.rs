@@ -216,6 +216,8 @@ impl SimulationBuilder {
 
     pub fn make_rig(&mut self, left_anchor: Point2<f32>, mid_anchor: Point2<f32>, right_anchor: Point2<f32>, num_tensioners: usize, tension: f32, spring_k: f32) {
         let perp = mid_anchor.to_vec() - left_anchor.midpoint(right_anchor).to_vec();
+        let left_edge = left_anchor.to_vec() - mid_anchor.to_vec();
+        let right_edge = right_anchor.to_vec() - mid_anchor.to_vec();
 
         let left_anchor = self.push_point(left_anchor, 0.);
         let mid_anchor = self.push_point(mid_anchor, 0.);
@@ -223,8 +225,16 @@ impl SimulationBuilder {
 
         let scaffold_n = if num_tensioners % 2 == 0 {num_tensioners + 2} else {(num_tensioners + 3) / 2};
         // TODO Fix magic number 5. (Take parameter for mass or density)
-        let left_rope = self.make_rope(Node::Index(left_anchor), Node::Index(mid_anchor), 5., spring_k, scaffold_n);
-        let right_rope = self.make_rope(Node::Index(right_anchor), Node::Index(mid_anchor), 5., spring_k, scaffold_n);
+        let ropes = [(left_anchor, left_edge), (right_anchor, right_edge)];
+        let mut ropes = ropes.iter()
+            .map(|&(end_anchor, edge)| {
+                self.make_rope(Node::Index(end_anchor), Node::Index(mid_anchor), 5., spring_k, scaffold_n)
+                /*self.make_rope_ext(Node::Index(end_anchor), Node::Index(mid_anchor),
+                    |_t| { edge * (1. / num_tensioners as f32) },
+                    5., spring_k, scaffold_n)*/
+            });
+        let left_rope = ropes.next().unwrap();
+        let right_rope = ropes.next().unwrap();
 
         let parabola_n = scaffold_n * 2 - 1;
         // TODO Fix magic number 5. (Take parameter for mass or density)
