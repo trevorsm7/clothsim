@@ -9,16 +9,8 @@ use cgmath::{Point2, Vector2};
 use image::{ImageBuffer, RgbImage, Rgb};
 use std::env;
 
-/*fn pixel_size(size: Vector2<f32>, pixels: u32) -> (u32, u32) {
-    if size.y > size.x {
-        (f32::ceil(pixels as f32 * size.x / size.y) as u32, pixels)
-    } else {
-        (pixels, f32::ceil(pixels as f32 * size.y / size.x) as u32)
-    }
-}*/
-
 fn main() {
-    let (mut sim, origin, size) = match env::args().nth(1).as_deref() {
+    match env::args().nth(1).as_deref() {
         Some("net") => {
             let mass = 10.;
             let origin = Point2::new(-10., 10.);
@@ -30,7 +22,24 @@ fn main() {
             builder.set_damper(0.93);
             let spring_var = builder.push_variable(100.);
             builder.make_net(origin, u, v, mass, spring_var, 18);
-            (builder.build(), Point2::new(-12., -14.), Vector2::new(24., 24.))
+
+            let mut sim = builder.build();
+            let mut img: RgbImage = ImageBuffer::new(1024, 1024);
+            let origin = Point2::new(-12., -14.);
+            let size = Vector2::new(24., 24.);
+
+            let steps = 2000;
+            for i in 0..steps {
+                let f = i as f32 / steps as f32;
+                let u = (f * 255.).ceil() as u8;
+                if i % 100 == 0 {
+                    sim.rasterize(|start, end| rasterize_line(&mut img, origin, size, start, end, Rgb([u, 255 - u, u])));
+                }
+                sim.step(0.01);
+            }
+            sim.rasterize(|start, end| rasterize_line(&mut img, origin, size, start, end, Rgb([255, 0, 255])));
+
+            img.save("test.png").unwrap();
         },
         Some("rig") => {
             let left_anchor = Point2::new(0., 14.);
@@ -43,7 +52,34 @@ fn main() {
             let spring_var = builder.push_variable(150.);
             builder.make_rig(left_anchor, mid_anchor, right_anchor, num_tensioners, tension_var, spring_var);
             builder.set_damper(0.97);
-            (builder.build(), Point2::new(-1., -1.), Vector2::new(30., 30.))
+
+            let mut sim = builder.build();
+            let mut img: RgbImage = ImageBuffer::new(1024, 1024);
+            let origin = Point2::new(-1., -1.);
+            let size = Vector2::new(30., 30.);
+
+            let sweep_steps = 16;
+            let sim_steps = 600;
+            let max_tension = 4.;
+            for sweep in 0..sweep_steps {
+                let f = sweep as f32 / sweep_steps as f32;
+                sim.set_variable(tension_var, max_tension * f);
+
+                // Allow sim to stabilize after adjusting tension
+                for _step in 0..sim_steps {
+                    sim.step(0.01);
+                    /*if sweep == 0 && step % 100 == 0 {
+                        let f = step as f32 / sim_steps as f32;
+                        let u = (f * 255.).ceil() as u8;
+                        sim.rasterize(|start, end| rasterize_line(&mut img, origin, size, start, end, Rgb([u, 255 - u, u])));
+                    }*/
+                }
+
+                let u = (f * 255.).ceil() as u8;
+                sim.rasterize(|start, end| rasterize_line(&mut img, origin, size, start, end, Rgb([u, 255 - u, u])));
+            }
+
+            img.save("test.png").unwrap();
         },
         _ => {
             let mass = 1.;
@@ -57,34 +93,24 @@ fn main() {
             let start_idx = builder.push_point(start, 0.);
             let end_idx = builder.push_point(end, 0.);
             builder.make_rope(Node::Index(start_idx), Node::Index(end_idx), mass, spring_var, 8);
-            (builder.build(), Point2::new(-11., -21.), Vector2::new(22., 22.))
+
+            let mut sim = builder.build();
+            let mut img: RgbImage = ImageBuffer::new(1024, 1024);
+            let origin = Point2::new(-11., -21.);
+            let size = Vector2::new(22., 22.);
+
+            let steps = 120;
+            for i in 0..steps {
+                let f = i as f32 / steps as f32;
+                let u = (f * 255.).ceil() as u8;
+                if i % 20 == 0 {
+                    sim.rasterize(|start, end| rasterize_line(&mut img, origin, size, start, end, Rgb([u, 255 - u, u])));
+                }
+                sim.step(0.01);
+            }
+            sim.rasterize(|start, end| rasterize_line(&mut img, origin, size, start, end, Rgb([255, 0, 255])));
+
+            img.save("test.png").unwrap();
         }
     };
-
-    //let (origin, size) = sim.find_bounds();
-    //println!("origin: {:?}, size: {:?}", origin, size);
-
-    //let (w, h) = pixel_size(size, 512);
-    let w = 1024;
-    let h = 1024;
-    //println!("w: {}, h: {}", w, h);
-
-    let mut img: RgbImage = ImageBuffer::new(w, h);
-
-    let steps = 600;
-    for i in 0..steps {
-        let f = i as f32 / steps as f32;
-        let u = (f * 255.).ceil() as u8;
-        if i % 100 == 0 {
-            sim.rasterize(|start, end| rasterize_line(&mut img, origin, size, start, end, Rgb([u, 255 - u, u])));
-        }
-        sim.step(0.01);
-    }
-    sim.rasterize(|start, end| rasterize_line(&mut img, origin, size, start, end, Rgb([255, 0, 255])));
-
-    /*let start = to_clip_space(Point2::new(9., 0.09), origin, size);
-    let end = to_clip_space(Point2::new(-9., -0.09), origin, size);
-    rasterize_line(&mut img, start, end, Rgb([255, 255, 255]));*/
-
-    img.save("test.png").unwrap();
 }

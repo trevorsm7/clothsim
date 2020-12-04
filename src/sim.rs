@@ -36,6 +36,10 @@ impl Simulation {
         Simulation {pos, vel, force, mass, line, spring, tension, variables, gravity, damper_k}
     }
 
+    pub fn set_variable(&mut self, index: u32, value: f32) {
+        self.variables[index as usize] = value;
+    }
+
     fn reset_force(&mut self) {
         for force in self.force.iter_mut() {
             *force = Vector2::zero();
@@ -78,16 +82,6 @@ impl Simulation {
 
         self.reset_force();
     }
-
-    /*fn find_bounds(&self) -> (Point2<f32>, Vector2<f32>) {
-        let mut min = Point2::new(f32::INFINITY, f32::INFINITY);
-        let mut max = Point2::new(f32::NEG_INFINITY, f32::NEG_INFINITY);
-        for point in self.pos.front().iter() {
-            min = Point2::new(min.x.min(point.x), min.y.min(point.y));
-            max = Point2::new(max.x.max(point.x), max.y.max(point.y));
-        }
-        (min, max - min)
-    }*/
 
     pub fn rasterize<F: FnMut(Point2<f32>, Point2<f32>)>(&self, mut draw: F) {
         self.line.iter()
